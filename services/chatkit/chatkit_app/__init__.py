@@ -1,0 +1,1 @@
+"""ChatKit workspace service package."""
