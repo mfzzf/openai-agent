@@ -1,0 +1,6 @@
+openai-chatkit>=1.4.1
+opentelemetry-exporter-otlp-proto-grpc>=1.27.0
+opentelemetry-sdk>=1.27.0
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9

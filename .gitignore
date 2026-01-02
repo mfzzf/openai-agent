@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+dist
+.env
+.env.local
+.env.*.local
+.DS_Store
+.turbo
+*.tgz
+package
+services/chatkit/.venv
+services/chatkit/uploads
+services/chatkit/__pycache__
