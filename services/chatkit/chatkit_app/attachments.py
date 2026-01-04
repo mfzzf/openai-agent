@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from chatkit.store import AttachmentStore
 from chatkit.types import Attachment, AttachmentCreateParams, FileAttachment, ImageAttachment
+from pydantic import AnyUrl, TypeAdapter
 
 from .store import RequestContext, WorkspaceStore
+
+
+_ANY_URL_ADAPTER = TypeAdapter(AnyUrl)
 
 
 class LocalAttachmentStore(AttachmentStore[RequestContext]):
@@ -14,7 +18,9 @@ class LocalAttachmentStore(AttachmentStore[RequestContext]):
         self, input: AttachmentCreateParams, context: RequestContext
     ) -> Attachment:
         attachment_id = self.generate_attachment_id(input.mime_type, context)
-        upload_url = f"{context.base_url}/files/{attachment_id}"
+        upload_url = _ANY_URL_ADAPTER.validate_python(
+            f"{context.base_url}/files/{attachment_id}"
+        )
         if input.mime_type.startswith("image/"):
             attachment = ImageAttachment(
                 id=attachment_id,

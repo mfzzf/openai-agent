@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Sequence
-from typing import Any, AsyncIterator
+from collections.abc import AsyncGenerator, Sequence
+from typing import Any, AsyncIterator, cast
 
 from agents import Agent, RunConfig, Runner, StopAtTools
 from agents.model_settings import ModelSettings
@@ -235,7 +235,7 @@ class WorkspaceChatKitServer(ChatKitServer[RequestContext]):
             name="WorkspaceAgent",
             instructions=self._instructions,
             model=self._model,
-            tools=TOOLS,
+            tools=cast(list[Any], TOOLS),
             tool_use_behavior=StopAtTools(stop_at_tool_names=TOOL_NAMES),
         )
 
@@ -244,7 +244,7 @@ class WorkspaceChatKitServer(ChatKitServer[RequestContext]):
     ) -> StreamingResult | NonStreamingResult:
         parsed_request = TypeAdapter[ChatKitReq](ChatKitReq).validate_json(request)
         if isinstance(parsed_request, ThreadsAddClientToolOutputReq):
-            async def _stream_bytes() -> AsyncIterator[bytes]:
+            async def _stream_bytes() -> AsyncGenerator[bytes, None]:
                 async for event in self._process_tool_output(parsed_request, context):
                     data = self._serialize(event)
                     yield b"data: " + data + b"\n\n"
@@ -298,7 +298,7 @@ class WorkspaceChatKitServer(ChatKitServer[RequestContext]):
             self._tool_payloads[item_id] = widget_payload
             widget = _build_tool_widget(widget_payload, expanded=False)
 
-            async def _single_widget() -> AsyncIterator[WidgetRoot]:
+            async def _single_widget() -> AsyncGenerator[WidgetRoot, None]:
                 yield widget
 
             async for event in stream_widget(
@@ -400,7 +400,7 @@ class WorkspaceChatKitServer(ChatKitServer[RequestContext]):
         self._tool_payloads[item_id] = widget_payload
         widget = _build_tool_widget(widget_payload, expanded=False)
 
-        async def _single_widget() -> AsyncIterator[WidgetRoot]:
+        async def _single_widget() -> AsyncGenerator[WidgetRoot, None]:
             yield widget
 
         async for event in stream_widget(

@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from chatkit.server import NonStreamingResult, StreamingResult
 from chatkit.store import NotFoundError
 from chatkit.types import FileAttachment, ImageAttachment
+from pydantic import AnyUrl, TypeAdapter
 
 from .attachments import LocalAttachmentStore
 from .config import (
@@ -30,8 +31,12 @@ import aiofiles
 
 configure_tracing()
 
-MAX_UPLOAD_SIZE = int(_env("CHATKIT_MAX_UPLOAD_SIZE", str(50 * 1024 * 1024)))  # 50MB default
-UPLOAD_DIR = Path(_env("CHATKIT_UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads"))).expanduser()
+_ANY_URL_ADAPTER = TypeAdapter(AnyUrl)
+
+MAX_UPLOAD_SIZE = int(_env("CHATKIT_MAX_UPLOAD_SIZE") or str(50 * 1024 * 1024))  # 50MB default
+UPLOAD_DIR = Path(
+    _env("CHATKIT_UPLOAD_DIR") or str(Path(__file__).resolve().parent.parent / "uploads")
+).expanduser()
 
 
 def _public_base_url(request: Request) -> str:
@@ -150,7 +155,9 @@ async def upload_file(request: Request, file: UploadFile = File(...)) -> dict[st
         path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Empty upload")
 
-    preview_url = f"{context.base_url}/files/{attachment_id}"
+    preview_url = _ANY_URL_ADAPTER.validate_python(
+        f"{context.base_url}/files/{attachment_id}"
+    )
     if mime_type.startswith("image/"):
         attachment = ImageAttachment(
             id=attachment_id,
