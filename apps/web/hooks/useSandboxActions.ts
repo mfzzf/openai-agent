@@ -1,6 +1,7 @@
 "use client";
 
 import type { DesktopSandboxSession, PythonRunResult } from "@/lib/types/sandbox";
+import type { DesktopAction, DesktopScreenshotResult } from "@/lib/types/desktopActions";
 import { postJson } from "@/lib/apiClient";
 import { useWorkspaceStore } from "@/hooks/useWorkspaceStore";
 
@@ -193,5 +194,93 @@ export function useSandboxActions() {
     }
   };
 
-  return { startDesktop, stopDesktop, runPython };
+  const runDesktopAction = async (
+    action: DesktopAction,
+    opts?: { threadId?: string; source?: "chatkit" | "manual" | "system" }
+  ): Promise<void> => {
+    const activeThreadId = ensureThreadId(opts?.threadId);
+    const payload = { threadId: activeThreadId, ...action };
+
+    try {
+      await postJson<{ ok: true; result: { ok: true } }>(
+        "/api/sandbox/desktop/action",
+        payload
+      );
+      addEvent({
+        ts: Date.now(),
+        type: "info",
+        title: `desktop.${action.action}`,
+        detail: payload,
+      });
+      const source = opts?.source ?? "manual";
+      if (source !== "chatkit") {
+        void emitToolEvent({
+          tool: `sandbox.desktop.${action.action}`,
+          params: payload,
+          result: { ok: true },
+          status: "success",
+          source,
+        });
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Desktop action failed";
+      addEvent({
+        ts: Date.now(),
+        type: "error",
+        title: `desktop.${action.action}:error`,
+        detail: { message, payload },
+      });
+      const source = opts?.source ?? "manual";
+      if (source !== "chatkit") {
+        void emitToolEvent({
+          tool: `sandbox.desktop.${action.action}`,
+          params: payload,
+          result: { ok: false, error: { message } },
+          status: "error",
+          source,
+        });
+      }
+      throw error;
+    }
+  };
+
+  const takeDesktopScreenshot = async (opts?: {
+    threadId?: string;
+    includeCursor?: boolean;
+    includeScreenSize?: boolean;
+  }): Promise<DesktopScreenshotResult> => {
+    const activeThreadId = ensureThreadId(opts?.threadId);
+    const response = await postJson<{ ok: true; screenshot: DesktopScreenshotResult }>(
+      "/api/sandbox/desktop/screenshot",
+      {
+        threadId: activeThreadId,
+        includeCursor: opts?.includeCursor ?? true,
+        includeScreenSize: opts?.includeScreenSize ?? true,
+      }
+    );
+
+    addEvent({
+      ts: Date.now(),
+      type: "info",
+      title: "desktop.screenshot",
+      detail: {
+        threadId: activeThreadId,
+        mime: response.screenshot.mime,
+        screenSize: response.screenshot.screenSize,
+        cursorPosition: response.screenshot.cursorPosition,
+        imageBytes: Math.floor((response.screenshot.imageBase64.length * 3) / 4),
+      },
+    });
+
+    return response.screenshot;
+  };
+
+  return {
+    startDesktop,
+    stopDesktop,
+    runPython,
+    runDesktopAction,
+    takeDesktopScreenshot,
+  };
 }

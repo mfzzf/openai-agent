@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Sequence
 from typing import Any, AsyncIterator
 
 from agents import Agent, RunConfig, Runner, StopAtTools
@@ -29,7 +30,7 @@ from chatkit.types import (
     WidgetRootUpdated,
     ThreadItemUpdatedEvent,
 )
-from chatkit.widgets import Card
+from chatkit.widgets import WidgetRoot
 from openai.types.responses import (
     ResponseFunctionToolCallParam,
     ResponseInputContentParam,
@@ -43,12 +44,95 @@ from pydantic import TypeAdapter
 from .config import _tool_output_mode
 from .store import RequestContext, WorkspaceStore
 from .tools import DOTTED_TO_SAFE, TOOL_NAMES, TOOLS
-from .widgets import _build_tool_widget, _format_tool_result_message
+from .widgets import _build_tool_widget, _format_tool_result_message, _sanitize_tool_payload
 
 
 class CustomThreadItemConverter(ThreadItemConverter):
     def __init__(self, store: WorkspaceStore) -> None:
         self.store = store
+        self._latest_desktop_screenshot_call_id: str | None = None
+
+    async def to_agent_input(self, thread_items: Sequence[Any] | Any) -> list[Any]:
+        items: list[Any]
+        if isinstance(thread_items, Sequence):
+            items = list(thread_items)
+        else:
+            items = [thread_items]
+
+        latest_call_id: str | None = None
+        for entry in reversed(items):
+            if (
+                isinstance(entry, ClientToolCallItem)
+                and entry.status != "pending"
+                and entry.name == "sandbox.desktop.screenshot"
+            ):
+                latest_call_id = entry.call_id
+                break
+
+        self._latest_desktop_screenshot_call_id = latest_call_id
+        try:
+            return await super().to_agent_input(items)
+        finally:
+            self._latest_desktop_screenshot_call_id = None
+
+    def _redact_tool_output_for_model(self, output: Any) -> Any:
+        if isinstance(output, dict):
+            redacted: dict[str, Any] = {}
+            for key, value in output.items():
+                if key == "imageBase64" and isinstance(value, str):
+                    redacted[key] = f"[base64 omitted: {len(value)} chars]"
+                    redacted["imageBytes"] = int(len(value) * 3 / 4)
+                    continue
+                redacted[key] = self._redact_tool_output_for_model(value)
+            return redacted
+        if isinstance(output, list):
+            return [self._redact_tool_output_for_model(entry) for entry in output]
+        return output
+
+    def _desktop_screenshot_to_input(self, item: ClientToolCallItem) -> Message | None:
+        if item.name != "sandbox.desktop.screenshot":
+            return None
+        if (
+            self._latest_desktop_screenshot_call_id
+            and item.call_id != self._latest_desktop_screenshot_call_id
+        ):
+            return None
+        if not isinstance(item.output, dict):
+            return None
+        image_base64 = item.output.get("imageBase64")
+        if not isinstance(image_base64, str) or not image_base64.strip():
+            return None
+
+        mime = item.output.get("mime")
+        mime_value = mime if isinstance(mime, str) and mime.strip() else "image/png"
+
+        screen_size = item.output.get("screenSize")
+        cursor_position = item.output.get("cursorPosition")
+        metadata: dict[str, Any] = {
+            "tool": item.name,
+            "note": "Coordinates are pixels; origin is top-left of the screenshot.",
+        }
+        if isinstance(screen_size, dict):
+            metadata["screenSize"] = screen_size
+        if isinstance(cursor_position, dict):
+            metadata["cursorPosition"] = cursor_position
+
+        return Message(
+            role="user",
+            type="message",
+            content=[
+                ResponseInputTextParam(
+                    type="input_text",
+                    text="Desktop screenshot (observation):\n"
+                    + json.dumps(metadata, ensure_ascii=True, default=str),
+                ),
+                ResponseInputImageParam(
+                    type="input_image",
+                    detail="auto",
+                    image_url=f"data:{mime_value};base64,{image_base64}",
+                ),
+            ],
+        )
 
     async def attachment_to_message_content(
         self, attachment
@@ -87,7 +171,7 @@ class CustomThreadItemConverter(ThreadItemConverter):
 
         mode = _tool_output_mode()
         if mode == "function":
-            return [
+            inputs: list[Any] = [
                 ResponseFunctionToolCallParam(
                     type="function_call",
                     call_id=item.call_id,
@@ -97,25 +181,39 @@ class CustomThreadItemConverter(ThreadItemConverter):
                 FunctionCallOutput(
                     type="function_call_output",
                     call_id=item.call_id,
-                    output=json.dumps(item.output, ensure_ascii=True),
+                    output=json.dumps(
+                        self._redact_tool_output_for_model(item.output),
+                        ensure_ascii=True,
+                        default=str,
+                    ),
                 ),
             ]
+            screenshot_input = self._desktop_screenshot_to_input(item)
+            if screenshot_input:
+                inputs.append(screenshot_input)
+            return inputs
 
         payload = {
             "name": item.name,
             "arguments": item.arguments,
-            "output": item.output,
+            "output": self._redact_tool_output_for_model(item.output),
             "call_id": item.call_id,
         }
         text = (
             "Tool execution result (tool already completed):\n"
             + json.dumps(payload, ensure_ascii=True, default=str)
         )
-        return Message(
-            role="user",
-            type="message",
-            content=[ResponseInputTextParam(type="input_text", text=text)],
-        )
+        inputs: list[Any] = [
+            Message(
+                role="user",
+                type="message",
+                content=[ResponseInputTextParam(type="input_text", text=text)],
+            )
+        ]
+        screenshot_input = self._desktop_screenshot_to_input(item)
+        if screenshot_input:
+            inputs.append(screenshot_input)
+        return inputs
 
 
 class WorkspaceChatKitServer(ChatKitServer[RequestContext]):
@@ -193,19 +291,20 @@ class WorkspaceChatKitServer(ChatKitServer[RequestContext]):
             "callId": tool_call.call_id,
             "source": "chatkit",
         }
+        widget_payload = _sanitize_tool_payload(payload)
 
         async def _emit_tool_message_and_respond() -> AsyncIterator[ThreadStreamEvent]:
             item_id = self.store.generate_item_id("message", thread, context)
-            self._tool_payloads[item_id] = payload
-            widget = _build_tool_widget(payload, expanded=False)
+            self._tool_payloads[item_id] = widget_payload
+            widget = _build_tool_widget(widget_payload, expanded=False)
 
-            async def _single_widget() -> AsyncIterator[Card]:
+            async def _single_widget() -> AsyncIterator[WidgetRoot]:
                 yield widget
 
             async for event in stream_widget(
                 thread,
                 _single_widget(),
-                copy_text=_format_tool_result_message(payload),
+                copy_text=_format_tool_result_message(widget_payload),
                 generate_id=lambda _item_type: item_id,
             ):
                 yield event
@@ -296,17 +395,18 @@ class WorkspaceChatKitServer(ChatKitServer[RequestContext]):
         if not isinstance(payload, dict):
             payload = {"value": payload}
 
+        widget_payload = _sanitize_tool_payload(payload)
         item_id = self.store.generate_item_id("message", thread, context)
-        self._tool_payloads[item_id] = payload
-        widget = _build_tool_widget(payload, expanded=False)
+        self._tool_payloads[item_id] = widget_payload
+        widget = _build_tool_widget(widget_payload, expanded=False)
 
-        async def _single_widget() -> AsyncIterator[Card]:
+        async def _single_widget() -> AsyncIterator[WidgetRoot]:
             yield widget
 
         async for event in stream_widget(
             thread,
             _single_widget(),
-            copy_text=_format_tool_result_message(payload),
+            copy_text=_format_tool_result_message(widget_payload),
             generate_id=lambda _item_type: item_id,
         ):
             yield event

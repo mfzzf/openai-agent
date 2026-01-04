@@ -7,6 +7,11 @@ import {
   releaseLock,
   setJson,
 } from "@/lib/store/redis";
+import type {
+  DesktopActionApiRequest,
+  DesktopScreenshotApiRequest,
+  DesktopScreenshotResult,
+} from "@/lib/types/desktopActions";
 import type { DesktopSandboxSession } from "@/lib/types/sandbox";
 
 const DESKTOP_TTL_SECONDS = 30 * 60;
@@ -24,6 +29,133 @@ function getDesktopLockKey(threadId: string) {
 async function connectDesktop(sandboxId: string) {
   const config = getConfig();
   return Sandbox.connect(sandboxId, { apiKey: config.e2bApiKey });
+}
+
+export async function desktopAction(
+  params: DesktopActionApiRequest
+): Promise<{ ok: true }> {
+  const key = getDesktopKey(params.threadId);
+  const session = await getJson<DesktopSandboxSession>(key);
+  if (!session) {
+    throw new Error("Desktop sandbox is not started. Run desktop start first.");
+  }
+
+  const desktop = await connectDesktop(session.sandboxId);
+
+  switch (params.action) {
+    case "click": {
+      const button = params.button ?? "left";
+      if (params.double) {
+        await desktop.doubleClick(params.x, params.y);
+        break;
+      }
+      if (button === "right") {
+        await desktop.rightClick(params.x, params.y);
+      } else if (button === "middle") {
+        await desktop.middleClick(params.x, params.y);
+      } else {
+        await desktop.leftClick(params.x, params.y);
+      }
+      break;
+    }
+    case "type": {
+      if (params.chunkSize || params.delayInMs) {
+        await desktop.write(params.text, {
+          chunkSize: params.chunkSize ?? 25,
+          delayInMs: params.delayInMs ?? 75,
+        });
+      } else {
+        await desktop.write(params.text);
+      }
+      break;
+    }
+    case "press": {
+      await desktop.press(params.keys);
+      break;
+    }
+    case "wait": {
+      await desktop.wait(params.ms);
+      break;
+    }
+    case "scroll": {
+      await desktop.scroll(params.direction ?? "down", params.amount ?? 1);
+      break;
+    }
+    case "moveMouse": {
+      await desktop.moveMouse(params.x, params.y);
+      break;
+    }
+    case "drag": {
+      await desktop.drag([params.fromX, params.fromY], [params.toX, params.toY]);
+      break;
+    }
+    default: {
+      const _exhaustive: never = params;
+      void _exhaustive;
+      throw new Error("Unknown desktop action");
+    }
+  }
+
+  const now = Date.now();
+  await setJson(
+    key,
+    {
+      ...session,
+      lastActiveAt: now,
+    } satisfies DesktopSandboxSession,
+    DESKTOP_TTL_SECONDS
+  );
+
+  return { ok: true };
+}
+
+export async function desktopScreenshot(
+  params: DesktopScreenshotApiRequest
+): Promise<DesktopScreenshotResult> {
+  const key = getDesktopKey(params.threadId);
+  const session = await getJson<DesktopSandboxSession>(key);
+  if (!session) {
+    throw new Error("Desktop sandbox is not started. Run desktop start first.");
+  }
+
+  const desktop = await connectDesktop(session.sandboxId);
+  const imageBytes = await desktop.screenshot();
+  const imageBase64 = Buffer.from(imageBytes).toString("base64");
+
+  let screenSize: DesktopScreenshotResult["screenSize"];
+  if (params.includeScreenSize ?? true) {
+    try {
+      screenSize = await desktop.getScreenSize();
+    } catch (error) {
+      console.warn("Desktop getScreenSize warning", error);
+    }
+  }
+
+  let cursorPosition: DesktopScreenshotResult["cursorPosition"];
+  if (params.includeCursor ?? true) {
+    try {
+      cursorPosition = await desktop.getCursorPosition();
+    } catch (error) {
+      console.warn("Desktop getCursorPosition warning", error);
+    }
+  }
+
+  const now = Date.now();
+  await setJson(
+    key,
+    {
+      ...session,
+      lastActiveAt: now,
+    } satisfies DesktopSandboxSession,
+    DESKTOP_TTL_SECONDS
+  );
+
+  return {
+    mime: "image/png",
+    imageBase64,
+    screenSize,
+    cursorPosition,
+  };
 }
 
 export async function desktopStart(params: {

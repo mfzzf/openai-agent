@@ -188,3 +188,37 @@ type ComputerUseRunApiResponse =
 5. `ui.notify`
    - args: `{ level:"info"|"warn"|"error", message:string }`
    - return: `{ ok: true }`
+
+6. `sandbox.desktop.click`
+   - args: `{ threadId?: string, x: number, y: number, button?: "left"|"right"|"middle", double?: boolean }`
+   - return: `{ ok: true }`
+
+7. `sandbox.desktop.type`
+   - args: `{ threadId?: string, text: string, chunkSize?: number, delayInMs?: number }`
+   - return: `{ ok: true }`
+
+8. `sandbox.desktop.press`
+   - args: `{ threadId?: string, keys: string[] }`
+   - return: `{ ok: true }`
+
+9. `sandbox.desktop.wait`
+   - args: `{ threadId?: string, ms: number }`
+   - return: `{ ok: true }`
+
+10. `sandbox.desktop.scroll`
+   - args: `{ threadId?: string, direction?: "up"|"down", amount?: number }`
+   - return: `{ ok: true }`
+
+11. `sandbox.desktop.moveMouse`
+   - args: `{ threadId?: string, x: number, y: number }`
+   - return: `{ ok: true }`
+
+12. `sandbox.desktop.drag`
+   - args: `{ threadId?: string, fromX: number, fromY: number, toX: number, toY: number }`
+   - return: `{ ok: true }`
+
+13. `sandbox.desktop.screenshot`
+   - args: `{ threadId?: string, includeCursor?: boolean, includeScreenSize?: boolean }`
+   - return: `{ ok: true, mime: "image/png", imageBase64: string, screenSize?: { width:number, height:number }, cursorPosition?: { x:number, y:number } }`
+
+> 坐标约定：所有 `x/y` 都是截图的像素坐标，左上角为原点 `(0,0)`。

@@ -64,6 +64,162 @@ def sandbox_python_run(
     )
 
 
+@function_tool(name_override="sandbox_desktop_click")
+def sandbox_desktop_click(
+    ctx: ToolContext[Any],
+    x: int,
+    y: int,
+    button: Optional[str] = None,
+    double: Optional[bool] = None,
+    threadId: Optional[str] = None,
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.click",
+        {
+            "threadId": thread_id,
+            "x": x,
+            "y": y,
+            "button": button,
+            "double": double,
+        },
+    )
+
+
+@function_tool(name_override="sandbox_desktop_type")
+def sandbox_desktop_type(
+    ctx: ToolContext[Any],
+    text: str,
+    chunkSize: Optional[int] = None,
+    delayInMs: Optional[int] = None,
+    threadId: Optional[str] = None,
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.type",
+        {
+            "threadId": thread_id,
+            "text": text,
+            "chunkSize": chunkSize,
+            "delayInMs": delayInMs,
+        },
+    )
+
+
+@function_tool(name_override="sandbox_desktop_press")
+def sandbox_desktop_press(
+    ctx: ToolContext[Any],
+    keys: list[str],
+    threadId: Optional[str] = None,
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.press",
+        {
+            "threadId": thread_id,
+            "keys": keys,
+        },
+    )
+
+
+@function_tool(name_override="sandbox_desktop_wait")
+def sandbox_desktop_wait(
+    ctx: ToolContext[Any], ms: int, threadId: Optional[str] = None
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.wait",
+        {
+            "threadId": thread_id,
+            "ms": ms,
+        },
+    )
+
+
+@function_tool(name_override="sandbox_desktop_scroll")
+def sandbox_desktop_scroll(
+    ctx: ToolContext[Any],
+    direction: Optional[str] = None,
+    amount: Optional[int] = None,
+    threadId: Optional[str] = None,
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.scroll",
+        {
+            "threadId": thread_id,
+            "direction": direction,
+            "amount": amount,
+        },
+    )
+
+
+@function_tool(name_override="sandbox_desktop_move_mouse")
+def sandbox_desktop_move_mouse(
+    ctx: ToolContext[Any],
+    x: int,
+    y: int,
+    threadId: Optional[str] = None,
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.moveMouse",
+        {
+            "threadId": thread_id,
+            "x": x,
+            "y": y,
+        },
+    )
+
+
+@function_tool(name_override="sandbox_desktop_drag")
+def sandbox_desktop_drag(
+    ctx: ToolContext[Any],
+    fromX: int,
+    fromY: int,
+    toX: int,
+    toY: int,
+    threadId: Optional[str] = None,
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.drag",
+        {
+            "threadId": thread_id,
+            "fromX": fromX,
+            "fromY": fromY,
+            "toX": toX,
+            "toY": toY,
+        },
+    )
+
+
+@function_tool(name_override="sandbox_desktop_screenshot")
+def sandbox_desktop_screenshot(
+    ctx: ToolContext[Any],
+    threadId: Optional[str] = None,
+    includeCursor: Optional[bool] = None,
+    includeScreenSize: Optional[bool] = None,
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.screenshot",
+        {
+            "threadId": thread_id,
+            "includeCursor": includeCursor,
+            "includeScreenSize": includeScreenSize,
+        },
+    )
+
+
 @function_tool(name_override="ui_open_tab")
 def ui_open_tab(ctx: ToolContext[Any], tab: str) -> dict[str, Any]:
     return _tool_result(ctx, "ui.openTab", {"tab": tab})
@@ -94,6 +250,14 @@ TOOL_NAME_MAP = {
     "sandbox_desktop_start": "sandbox.desktop.start",
     "sandbox_desktop_stop": "sandbox.desktop.stop",
     "sandbox_python_run": "sandbox.python.run",
+    "sandbox_desktop_click": "sandbox.desktop.click",
+    "sandbox_desktop_type": "sandbox.desktop.type",
+    "sandbox_desktop_press": "sandbox.desktop.press",
+    "sandbox_desktop_wait": "sandbox.desktop.wait",
+    "sandbox_desktop_scroll": "sandbox.desktop.scroll",
+    "sandbox_desktop_move_mouse": "sandbox.desktop.moveMouse",
+    "sandbox_desktop_drag": "sandbox.desktop.drag",
+    "sandbox_desktop_screenshot": "sandbox.desktop.screenshot",
     "ui_open_tab": "ui.openTab",
     "ui_notify": "ui.notify",
     "ui_open_desktop_panel": "ui.openDesktopPanel",
@@ -108,6 +272,14 @@ TOOLS = [
     sandbox_desktop_start,
     sandbox_desktop_stop,
     sandbox_python_run,
+    sandbox_desktop_click,
+    sandbox_desktop_type,
+    sandbox_desktop_press,
+    sandbox_desktop_wait,
+    sandbox_desktop_scroll,
+    sandbox_desktop_move_mouse,
+    sandbox_desktop_drag,
+    sandbox_desktop_screenshot,
     ui_open_tab,
     ui_notify,
     ui_open_desktop_panel,

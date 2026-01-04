@@ -18,6 +18,60 @@ export const desktopStatusSchema = z.object({
   threadId: z.string().min(1),
 });
 
+export const desktopActionSchema = z.discriminatedUnion("action", [
+  z.object({
+    threadId: z.string().min(1),
+    action: z.literal("click"),
+    x: z.number().int().nonnegative(),
+    y: z.number().int().nonnegative(),
+    button: z.enum(["left", "right", "middle"]).optional(),
+    double: z.boolean().optional(),
+  }),
+  z.object({
+    threadId: z.string().min(1),
+    action: z.literal("type"),
+    text: z.string().min(1),
+    chunkSize: z.number().int().positive().optional(),
+    delayInMs: z.number().int().nonnegative().optional(),
+  }),
+  z.object({
+    threadId: z.string().min(1),
+    action: z.literal("press"),
+    keys: z.array(z.string().min(1)).min(1),
+  }),
+  z.object({
+    threadId: z.string().min(1),
+    action: z.literal("wait"),
+    ms: z.number().int().nonnegative(),
+  }),
+  z.object({
+    threadId: z.string().min(1),
+    action: z.literal("scroll"),
+    direction: z.enum(["up", "down"]).optional(),
+    amount: z.number().int().positive().optional(),
+  }),
+  z.object({
+    threadId: z.string().min(1),
+    action: z.literal("moveMouse"),
+    x: z.number().int().nonnegative(),
+    y: z.number().int().nonnegative(),
+  }),
+  z.object({
+    threadId: z.string().min(1),
+    action: z.literal("drag"),
+    fromX: z.number().int().nonnegative(),
+    fromY: z.number().int().nonnegative(),
+    toX: z.number().int().nonnegative(),
+    toY: z.number().int().nonnegative(),
+  }),
+]);
+
+export const desktopScreenshotSchema = z.object({
+  threadId: z.string().min(1),
+  includeCursor: z.boolean().optional(),
+  includeScreenSize: z.boolean().optional(),
+});
+
 export const pythonCreateSchema = z.object({
   threadId: z.string().min(1),
 });

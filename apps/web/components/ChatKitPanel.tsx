@@ -16,7 +16,13 @@ export function ChatKitPanel(): JSX.Element {
   const setToolEventEmitter = useWorkspaceStore(
     (state) => state.setToolEventEmitter
   );
-  const { startDesktop, stopDesktop, runPython } = useSandboxActions();
+  const {
+    startDesktop,
+    stopDesktop,
+    runPython,
+    runDesktopAction,
+    takeDesktopScreenshot,
+  } = useSandboxActions();
 
   const chatkitApiUrl = process.env.NEXT_PUBLIC_CHATKIT_API_URL;
   const chatkitDomainKey =
@@ -35,7 +41,14 @@ export function ChatKitPanel(): JSX.Element {
     process.env.NEXT_PUBLIC_CHATKIT_UPLOAD_URL ??
     resolvedUploadUrl();
 
-  const toolRedactKeys = new Set(["streamUrl", "authKey"]);
+  const toolRedactKeys = new Set([
+    "streamUrl",
+    "authKey",
+    "imageBase64",
+    "data",
+    "fileData",
+    "file_data",
+  ]);
   const sanitizeToolPayload = (value: unknown): unknown => {
     if (Array.isArray(value)) {
       return value.map((entry) => sanitizeToolPayload(entry));
@@ -209,6 +222,159 @@ export function ChatKitPanel(): JSX.Element {
             );
             setActiveTab("python");
             return { ok: true, result };
+          }
+          case "sandbox.desktop.click": {
+            const x = toolCall.params?.x as number | undefined;
+            const y = toolCall.params?.y as number | undefined;
+            const button = toolCall.params?.button as
+              | "left"
+              | "right"
+              | "middle"
+              | undefined;
+            const double = toolCall.params?.double as boolean | undefined;
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            if (typeof x !== "number" || typeof y !== "number") {
+              return { ok: false, error: { message: "Missing click coordinates" } };
+            }
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            await runDesktopAction(
+              { action: "click", x, y, button, double },
+              { threadId: toolThreadId, source: "chatkit" }
+            );
+            setActiveTab("desktop");
+            return { ok: true };
+          }
+          case "sandbox.desktop.type": {
+            const text = toolCall.params?.text as string | undefined;
+            const chunkSize = toolCall.params?.chunkSize as number | undefined;
+            const delayInMs = toolCall.params?.delayInMs as number | undefined;
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            if (!text) {
+              return { ok: false, error: { message: "Missing text" } };
+            }
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            await runDesktopAction(
+              { action: "type", text, chunkSize, delayInMs },
+              { threadId: toolThreadId, source: "chatkit" }
+            );
+            setActiveTab("desktop");
+            return { ok: true };
+          }
+          case "sandbox.desktop.press": {
+            const keys = toolCall.params?.keys as string[] | undefined;
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            if (!Array.isArray(keys) || keys.length === 0) {
+              return { ok: false, error: { message: "Missing keys" } };
+            }
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            await runDesktopAction(
+              { action: "press", keys },
+              { threadId: toolThreadId, source: "chatkit" }
+            );
+            setActiveTab("desktop");
+            return { ok: true };
+          }
+          case "sandbox.desktop.wait": {
+            const ms = toolCall.params?.ms as number | undefined;
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            if (typeof ms !== "number") {
+              return { ok: false, error: { message: "Missing ms" } };
+            }
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            await runDesktopAction(
+              { action: "wait", ms },
+              { threadId: toolThreadId, source: "chatkit" }
+            );
+            setActiveTab("desktop");
+            return { ok: true };
+          }
+          case "sandbox.desktop.scroll": {
+            const direction = toolCall.params?.direction as
+              | "up"
+              | "down"
+              | undefined;
+            const amount = toolCall.params?.amount as number | undefined;
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            await runDesktopAction(
+              { action: "scroll", direction, amount },
+              { threadId: toolThreadId, source: "chatkit" }
+            );
+            setActiveTab("desktop");
+            return { ok: true };
+          }
+          case "sandbox.desktop.moveMouse": {
+            const x = toolCall.params?.x as number | undefined;
+            const y = toolCall.params?.y as number | undefined;
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            if (typeof x !== "number" || typeof y !== "number") {
+              return {
+                ok: false,
+                error: { message: "Missing mouse coordinates" },
+              };
+            }
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            await runDesktopAction(
+              { action: "moveMouse", x, y },
+              { threadId: toolThreadId, source: "chatkit" }
+            );
+            setActiveTab("desktop");
+            return { ok: true };
+          }
+          case "sandbox.desktop.drag": {
+            const fromX = toolCall.params?.fromX as number | undefined;
+            const fromY = toolCall.params?.fromY as number | undefined;
+            const toX = toolCall.params?.toX as number | undefined;
+            const toY = toolCall.params?.toY as number | undefined;
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            if (
+              typeof fromX !== "number" ||
+              typeof fromY !== "number" ||
+              typeof toX !== "number" ||
+              typeof toY !== "number"
+            ) {
+              return { ok: false, error: { message: "Missing drag coordinates" } };
+            }
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            await runDesktopAction(
+              { action: "drag", fromX, fromY, toX, toY },
+              { threadId: toolThreadId, source: "chatkit" }
+            );
+            setActiveTab("desktop");
+            return { ok: true };
+          }
+          case "sandbox.desktop.screenshot": {
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            const includeCursor = toolCall.params?.includeCursor as
+              | boolean
+              | undefined;
+            const includeScreenSize = toolCall.params?.includeScreenSize as
+              | boolean
+              | undefined;
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            const screenshot = await takeDesktopScreenshot({
+              threadId: toolThreadId,
+              includeCursor,
+              includeScreenSize,
+            });
+            setActiveTab("desktop");
+            return { ok: true, ...screenshot };
           }
           default:
             const response = {

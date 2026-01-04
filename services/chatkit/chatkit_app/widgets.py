@@ -3,21 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from chatkit.actions import ActionConfig
-from chatkit.widgets import (
-    Badge,
-    Box,
-    Button,
-    Caption,
-    Card,
-    Col,
-    Divider,
-    Icon,
-    Markdown,
-    Row,
-    Spacer,
-    Text,
-)
+from chatkit.widgets import WidgetRoot, WidgetTemplate
+
+
+_TOOL_WIDGET_TEMPLATE = WidgetTemplate.from_file("widget_templates/tool.widget")
+
+_REDACT_PLACEHOLDER = "[redacted]"
 
 
 def _extract_tool_payload(payload: dict[str, Any]) -> tuple[str, Any, Any, Any, Any, Any]:
@@ -30,9 +21,35 @@ def _extract_tool_payload(payload: dict[str, Any]) -> tuple[str, Any, Any, Any, 
     return tool, params, result, status, call_id, source
 
 
+def _redact_tool_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        # Redact image-like base64 blobs to avoid blowing up widget payloads.
+        mime = value.get("mime")
+        data = value.get("data")
+        if (
+            isinstance(mime, str)
+            and mime.startswith("image/")
+            and isinstance(data, str)
+            and len(data) > 128
+        ):
+            value = {**value, "data": f"{_REDACT_PLACEHOLDER} ({len(data)} chars)"}
+
+        redacted: dict[str, Any] = {}
+        for key, entry in value.items():
+            if key == "imageBase64" and isinstance(entry, str):
+                redacted[key] = f"{_REDACT_PLACEHOLDER} ({len(entry)} chars)"
+                continue
+            redacted[key] = _redact_tool_value(entry)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_tool_value(entry) for entry in value]
+    return value
+
+
 def _sanitize_tool_payload(payload: dict[str, Any]) -> dict[str, Any]:
     # Ensure payload is JSON-serializable for widget actions.
-    return json.loads(json.dumps(payload, ensure_ascii=True, default=str))
+    redacted = _redact_tool_value(payload)
+    return json.loads(json.dumps(redacted, ensure_ascii=True, default=str))
 
 
 def _format_tool_title(tool: str, payload: dict[str, Any]) -> str:
@@ -83,6 +100,7 @@ def _format_tool_input_markdown(params: Any) -> str | None:
 
 
 def _format_tool_output_markdown(result: Any) -> str | None:
+    result = _redact_tool_value(result)
     if isinstance(result, dict):
         lines: list[str] = []
         stdout = result.get("stdout")
@@ -126,6 +144,8 @@ def _format_tool_output_markdown(result: Any) -> str | None:
 
 def _format_tool_detail_sections(payload: dict[str, Any]) -> list[str]:
     _tool, params, result, _status, _call_id, _source = _extract_tool_payload(payload)
+    params = _redact_tool_value(params)
+    result = _redact_tool_value(result)
     lines: list[str] = []
 
     if isinstance(params, dict):
@@ -208,7 +228,7 @@ def _format_tool_result_message(payload: dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-def _build_tool_widget(payload: dict[str, Any], expanded: bool) -> Card:
+def _build_tool_widget(payload: dict[str, Any], expanded: bool) -> WidgetRoot:
     tool, params, result, status, call_id, _source = _extract_tool_payload(payload)
     tool_title = _format_tool_title(tool, payload)
     status_value = str(status) if status else ("running" if result is None else "unknown")
@@ -223,73 +243,24 @@ def _build_tool_widget(payload: dict[str, Any], expanded: bool) -> Card:
 
     time_caption = _format_time_caption(payload)
     toggle_label = "收起" if expanded else "详情"
-    toggle_action = ActionConfig(
-        type="agent.tool.toggle",
-        payload={
-            "id": call_id or tool,
-            "expanded": not expanded,
-            "toolPayload": _sanitize_tool_payload(payload),
-        },
+    input_markdown = _format_tool_input_markdown(params) if expanded else None
+    output_markdown = _format_tool_output_markdown(result) if expanded else None
+    status_key = str(status).lower() if isinstance(status, str) else ""
+    output_placeholder = "执行中…" if status_key in {"running", "pending"} else "尚无输出"
+
+    return _TOOL_WIDGET_TEMPLATE.build(
+        {
+            "expanded": expanded,
+            "expanded_next": not expanded,
+            "tool_title": tool_title,
+            "status_value": status_value,
+            "status_badge": status_badge,
+            "time_caption": time_caption,
+            "toggle_label": toggle_label,
+            "toggle_id": call_id or tool,
+            "tool_payload": _sanitize_tool_payload(payload),
+            "input_markdown": input_markdown,
+            "output_markdown": output_markdown,
+            "output_placeholder": output_placeholder,
+        }
     )
-
-    header_children: list[Any] = [
-        Box(
-            children=[Icon(name="square-code", size="lg")],
-            background="alpha-10",
-            radius="sm",
-            padding=1.5,
-        ),
-        Text(
-            value=tool_title,
-            size="sm",
-            weight="semibold",
-            maxLines=1,
-            truncate=True,
-        ),
-        Spacer(),
-    ]
-    if time_caption:
-        header_children.append(Caption(value=time_caption))
-    header_children.append(Badge(label=status_value, color=status_badge))
-    header_children.append(
-        Button(
-            label=toggle_label,
-            variant="outline",
-            size="xs",
-            onClickAction=toggle_action,
-        )
-    )
-
-    header = Row(
-        children=header_children,
-        gap=3,
-        align="center",
-        wrap="nowrap",
-        width="100%",
-    )
-
-    children: list[Any] = [header]
-    if expanded:
-        input_markdown = _format_tool_input_markdown(params)
-        output_markdown = _format_tool_output_markdown(result)
-        status_key = str(status).lower() if isinstance(status, str) else ""
-        output_placeholder = "执行中…" if status_key in {"running", "pending"} else "尚无输出"
-
-        detail_children: list[Any] = [
-            Divider(spacing=2),
-            Caption(value="输入"),
-        ]
-        if input_markdown:
-            detail_children.append(Markdown(value=input_markdown))
-        else:
-            detail_children.append(Text(value="（无输入）", size="sm", color="secondary"))
-
-        detail_children.append(Caption(value="输出"))
-        if output_markdown:
-            detail_children.append(Markdown(value=output_markdown))
-        else:
-            detail_children.append(Text(value=output_placeholder, size="sm", color="secondary"))
-
-        children.append(Col(children=detail_children, gap=2, width="100%", padding={"top": 2}))
-
-    return Card(children=children, padding=6, background="surface", size="full")
