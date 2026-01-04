@@ -3,11 +3,47 @@ from __future__ import annotations
 import json
 import threading
 from typing import Any
+from urllib.parse import urlparse
 
 from agents.tracing import set_trace_processors, set_tracing_disabled
 from agents.tracing.processor_interface import TracingProcessor
 
 from .config import _env, _is_truthy
+
+
+def _normalize_otlp_grpc_endpoint(raw_endpoint: str) -> tuple[str, bool | None]:
+    endpoint = (raw_endpoint or "").strip()
+    endpoint_lower = endpoint.lower()
+    if not endpoint_lower.startswith(("http://", "https://")):
+        return endpoint, None
+
+    parsed = urlparse(endpoint)
+    insecure_hint = parsed.scheme.lower() == "http"
+
+    host = parsed.hostname
+    port = parsed.port
+    if host:
+        if port is None:
+            port = 4317
+        if ":" in host:
+            host = f"[{host}]"
+        return f"{host}:{port}", insecure_hint
+
+    # Malformed URLs (e.g. `http:///...`): best-effort strip scheme and any path,
+    # but fall back to the original value if we can't extract a hostname.
+    authority = endpoint.split("://", 1)[1].split("/", 1)[0].rstrip("/")
+    return (authority or endpoint), insecure_hint
+
+
+def _otlp_grpc_exporter_config(
+    raw_endpoint: str,
+    insecure_env: str | None,
+) -> tuple[str, bool | None]:
+    endpoint, insecure_hint = _normalize_otlp_grpc_endpoint(raw_endpoint)
+    insecure = _is_truthy(insecure_env) if insecure_env is not None else insecure_hint
+    if insecure is None and endpoint.startswith(("localhost", "127.0.0.1", "0.0.0.0", "[::1]")):
+        insecure = True
+    return endpoint, insecure
 
 
 def configure_tracing() -> None:
@@ -41,12 +77,8 @@ def configure_tracing() -> None:
         return
 
     raw_endpoint = _env("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317") or "localhost:4317"
-    endpoint = raw_endpoint.strip()
-
     insecure_env = _env("OTEL_EXPORTER_OTLP_INSECURE")
-    insecure = _is_truthy(insecure_env) if insecure_env is not None else None
-    if insecure is None and endpoint.startswith(("localhost", "127.0.0.1", "0.0.0.0")):
-        insecure = True
+    endpoint, insecure = _otlp_grpc_exporter_config(raw_endpoint, insecure_env)
 
     service_name = _env("OTEL_SERVICE_NAME", "openai-agent-chatkit") or "openai-agent-chatkit"
     include_data = _is_truthy(_env("CHATKIT_TRACE_INCLUDE_DATA"))

@@ -73,12 +73,12 @@ The custom ChatKit server reads these env vars (set in your shell or a `.env` fi
 - `CHATKIT_TRACE_MODE` (`openai` | `otel` | `none`, default: `openai`)
 - `CHATKIT_TRACE_INCLUDE_DATA` (optional, include span data payloads in tracing)
 - `CHATKIT_TOOL_OUTPUT_MODE` (`auto` | `function` | `text`, default: `auto`)
-- `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, OTLP/gRPC endpoint like `localhost:4317`)
+- `OTEL_EXPORTER_OTLP_ENDPOINT` (optional, OTLP/gRPC endpoint like `localhost:4317` or `http://localhost:4317`)
 - `OTEL_EXPORTER_OTLP_INSECURE` (optional, set `true` for local collectors)
 - `OTEL_SERVICE_NAME` (optional, default: `openai-agent-chatkit`)
 
 To use Jaeger (OTLP/gRPC), set `CHATKIT_TRACE_MODE=otel` and keep
-`OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317`.
+`OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317` (or `http://localhost:4317`).
 
 ## Project structure
 
