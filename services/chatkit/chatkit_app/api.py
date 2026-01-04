@@ -26,8 +26,11 @@ from .server import WorkspaceChatKitServer
 from .store import InMemoryStore, RequestContext, SQLiteStore
 from .tracing import configure_tracing
 
+import aiofiles
+
 configure_tracing()
 
+MAX_UPLOAD_SIZE = int(_env("CHATKIT_MAX_UPLOAD_SIZE", str(50 * 1024 * 1024)))  # 50MB default
 UPLOAD_DIR = Path(_env("CHATKIT_UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads"))).expanduser()
 
 
@@ -126,16 +129,26 @@ async def health() -> dict[str, Any]:
 async def upload_file(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=400, detail="Empty upload")
 
     context = _build_request_context(request)
     mime_type = file.content_type or "application/octet-stream"
     attachment_id = attachment_store.generate_attachment_id(mime_type, context)
     suffix = Path(file.filename).suffix
     path = UPLOAD_DIR / f"{attachment_id}{suffix}"
-    path.write_bytes(contents)
+
+    total_size = 0
+    async with aiofiles.open(path, "wb") as f:
+        while chunk := await file.read(64 * 1024):
+            total_size += len(chunk)
+            if total_size > MAX_UPLOAD_SIZE:
+                await f.close()
+                path.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail=f"Upload exceeds {MAX_UPLOAD_SIZE} bytes limit")
+            await f.write(chunk)
+
+    if total_size == 0:
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Empty upload")
 
     preview_url = f"{context.base_url}/files/{attachment_id}"
     if mime_type.startswith("image/"):
@@ -161,13 +174,24 @@ async def upload_file(request: Request, file: UploadFile = File(...)) -> dict[st
 async def upload_file_by_id(attachment_id: str, request: Request) -> dict[str, Any]:
     context = _build_request_context(request)
     attachment = await store.load_attachment(attachment_id, context)
-    contents = await request.body()
-    if not contents:
-        raise HTTPException(status_code=400, detail="Empty upload")
 
     suffix = Path(attachment.name).suffix
     path = UPLOAD_DIR / f"{attachment_id}{suffix}"
-    path.write_bytes(contents)
+
+    total_size = 0
+    async with aiofiles.open(path, "wb") as f:
+        async for chunk in request.stream():
+            total_size += len(chunk)
+            if total_size > MAX_UPLOAD_SIZE:
+                await f.close()
+                path.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail=f"Upload exceeds {MAX_UPLOAD_SIZE} bytes limit")
+            await f.write(chunk)
+
+    if total_size == 0:
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Empty upload")
+
     store.set_attachment_file(attachment_id, path)
 
     if getattr(attachment, "upload_url", None):

@@ -40,3 +40,4 @@ class LocalAttachmentStore(AttachmentStore[RequestContext]):
                 path.unlink()
             except OSError:
                 pass
+        await self.store.delete_attachment(attachment_id, context)

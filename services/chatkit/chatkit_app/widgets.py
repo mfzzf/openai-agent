@@ -8,11 +8,11 @@ from chatkit.widgets import Badge, Button, Caption, Card, Markdown, Row, Text
 
 
 def _extract_tool_payload(payload: dict[str, Any]) -> tuple[str, Any, Any, Any, Any, Any]:
-    tool = payload.get("tool") or payload.get("name") or "tool"
-    params = payload.get("params") or payload.get("arguments") or {}
-    result = payload.get("result") or payload.get("output")
+    tool = payload.get("tool") if "tool" in payload else payload.get("name", "tool")
+    params = payload.get("params") if "params" in payload else payload.get("arguments", {})
+    result = payload.get("result") if "result" in payload else payload.get("output")
     status = payload.get("status")
-    call_id = payload.get("callId") or payload.get("call_id")
+    call_id = payload.get("callId") if "callId" in payload else payload.get("call_id")
     source = payload.get("source")
     return tool, params, result, status, call_id, source
 
