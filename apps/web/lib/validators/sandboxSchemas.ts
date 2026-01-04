@@ -25,8 +25,14 @@ export const pythonCreateSchema = z.object({
 export const pythonRunSchema = z.object({
   threadId: z.string().min(1),
   code: z.string().min(1),
-  timeoutSeconds: z.number().int().positive().optional(),
-  envs: z.record(z.string()).optional(),
+  timeoutSeconds: z.preprocess(
+    (value) => (value === null ? undefined : value),
+    z.number().int().positive().optional()
+  ),
+  envs: z.preprocess(
+    (value) => (value === null ? undefined : value),
+    z.record(z.string()).optional()
+  ),
 });
 
 export const pythonKillSchema = z.object({

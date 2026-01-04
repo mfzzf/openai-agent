@@ -3,7 +3,7 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 WEB := $(ROOT)/apps/web
 CHATKIT := $(ROOT)/services/chatkit
-CHATKIT_VENV := $(CHATKIT)/.venv
+CHATKIT_VENV := $(ROOT)/.venv
 
 help:
 	@echo "Targets:"
@@ -70,7 +70,7 @@ chatkit-dev:
 	@set -a; \
 	if [ -f $(WEB)/.env.local ]; then . $(WEB)/.env.local; fi; \
 	set +a; \
-	cd $(CHATKIT) && $(CHATKIT_VENV)/bin/uvicorn main:app --reload --port 8000
+	cd $(CHATKIT) && $(CHATKIT_VENV)/bin/python -m uvicorn main:app --reload --port 8000
 
 chatkit-clean:
 	rm -rf $(CHATKIT_VENV) $(CHATKIT)/__pycache__

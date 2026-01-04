@@ -9,7 +9,7 @@ dist
 .turbo
 *.tgz
 package
-services/chatkit/.venv
+.venv
 services/chatkit/uploads
 services/chatkit/__pycache__
 services/chatkit/data

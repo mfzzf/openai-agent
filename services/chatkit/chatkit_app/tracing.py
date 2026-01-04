@@ -41,14 +41,12 @@ def configure_tracing() -> None:
         return
 
     raw_endpoint = _env("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317") or "localhost:4317"
-    endpoint = raw_endpoint
-    if endpoint.startswith("http://") or endpoint.startswith("https://"):
-        endpoint = endpoint.split("://", 1)[1]
+    endpoint = raw_endpoint.strip()
 
-    insecure = _is_truthy(_env("OTEL_EXPORTER_OTLP_INSECURE"))
-    if not _env("OTEL_EXPORTER_OTLP_INSECURE"):
-        if endpoint.startswith(("localhost", "127.0.0.1", "0.0.0.0")):
-            insecure = True
+    insecure_env = _env("OTEL_EXPORTER_OTLP_INSECURE")
+    insecure = _is_truthy(insecure_env) if insecure_env is not None else None
+    if insecure is None and endpoint.startswith(("localhost", "127.0.0.1", "0.0.0.0")):
+        insecure = True
 
     service_name = _env("OTEL_SERVICE_NAME", "openai-agent-chatkit") or "openai-agent-chatkit"
     include_data = _is_truthy(_env("CHATKIT_TRACE_INCLUDE_DATA"))

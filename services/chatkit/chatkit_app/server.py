@@ -263,18 +263,25 @@ class WorkspaceChatKitServer(ChatKitServer[RequestContext]):
         sender,
         context: RequestContext,
     ) -> AsyncIterator[ThreadStreamEvent]:
-        if action.type == "tool.toggle":
+        if action.type in {"tool.toggle", "agent.tool.toggle"}:
             if sender is None:
                 return
             expanded = False
             payload = action.payload or {}
-            if isinstance(payload, dict) and payload.get("expanded") is not None:
-                expanded = bool(payload.get("expanded"))
+            tool_payload = None
+            if isinstance(payload, dict):
+                if payload.get("expanded") is not None:
+                    expanded = bool(payload.get("expanded"))
+                action_tool_payload = payload.get("toolPayload")
+                if isinstance(action_tool_payload, dict):
+                    tool_payload = action_tool_payload
 
-            tool_payload = self._tool_payloads.get(sender.id)
+            if not tool_payload:
+                tool_payload = self._tool_payloads.get(sender.id)
             if not tool_payload:
                 return
 
+            self._tool_payloads[sender.id] = tool_payload
             widget = _build_tool_widget(tool_payload, expanded=expanded)
             yield ThreadItemUpdatedEvent(
                 item_id=sender.id,
