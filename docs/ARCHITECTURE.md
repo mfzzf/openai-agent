@@ -61,7 +61,7 @@ Desktop / Python / Trace]
 - `ui.openTab({ tab })`：切换面板。
 - `ui.notify({ level, message })`：系统提示。
 - `sandbox.desktop.start({ threadId, viewOnly, requireAuth })`：触发后端 API，再打开 Desktop 面板。
-- `sandbox.python.run({ threadId, code, timeoutSeconds })`：触发后端 API，再展示结果。
+- `sandbox.code.run({ threadId, code, timeoutSeconds })`：触发后端 API，再展示结果。
 
 ### 4.2 Server Tools（后端处理）
 - `desktopStart/Stop/Status/Kill`：管理 E2B Desktop。

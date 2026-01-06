@@ -203,7 +203,7 @@ export function ChatKitPanel(): JSX.Element {
               expiresAt: session.expiresAt,
             };
           }
-          case "sandbox.python.run": {
+          case "sandbox.code.run": {
             const code = toolCall.params?.code as string | undefined;
             const language = toolCall.params?.language as "python" | "go" | "js" | undefined;
             const timeoutSeconds = toolCall.params?.timeoutSeconds as

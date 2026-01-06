@@ -177,7 +177,7 @@ type ComputerUseRunApiResponse =
    - args: `{ threadId?: string }`
    - return: `{ ok: true }`
 
-3. `sandbox.python.run`
+3. `sandbox.code.run`
    - args: `{ threadId?: string, code: string, timeoutSeconds?: number }`
    - return: `{ ok: true, result: PythonRunResult }`
 

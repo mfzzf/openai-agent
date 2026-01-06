@@ -206,7 +206,7 @@ export function useSandboxActions() {
         const source = opts?.source ?? "manual";
         if (source !== "chatkit") {
           void emitToolEvent({
-            tool: "sandbox.python.run",
+            tool: "sandbox.code.run",
             params: {
               threadId: activeThreadId,
               code,
@@ -226,7 +226,7 @@ export function useSandboxActions() {
         const source = opts?.source ?? "manual";
         if (source !== "chatkit") {
           void emitToolEvent({
-            tool: "sandbox.python.run",
+            tool: "sandbox.code.run",
             params: {
               threadId: activeThreadId,
               code,

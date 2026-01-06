@@ -77,7 +77,7 @@ def sandbox_python_run(
         payload["language"] = language
     return _tool_result(
         ctx,
-        "sandbox.python.run",
+        "sandbox.code.run",
         payload,
     )
 
@@ -268,7 +268,7 @@ TOOL_NAME_MAP = {
     "sandbox_desktop_start": "sandbox.desktop.start",
     "sandbox_desktop_stop": "sandbox.desktop.stop",
     "sandbox_desktop_set_timeout": "sandbox.desktop.setTimeout",
-    "sandbox_python_run": "sandbox.python.run",
+    "sandbox_python_run": "sandbox.code.run",
     "sandbox_desktop_click": "sandbox.desktop.click",
     "sandbox_desktop_type": "sandbox.desktop.type",
     "sandbox_desktop_press": "sandbox.desktop.press",
