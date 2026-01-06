@@ -22,6 +22,7 @@ export function ChatKitPanel(): JSX.Element {
     runPython,
     runDesktopAction,
     takeDesktopScreenshot,
+    setDesktopTimeout,
   } = useSandboxActions();
 
   const chatkitApiUrl = process.env.NEXT_PUBLIC_CHATKIT_API_URL;
@@ -201,6 +202,27 @@ export function ChatKitPanel(): JSX.Element {
           case "sandbox.desktop.stop": {
             await stopDesktop({ source: "chatkit" });
             return { ok: true };
+          }
+          case "sandbox.desktop.setTimeout": {
+            const timeoutSeconds = toolCall.params?.timeoutSeconds as
+              | number
+              | undefined;
+            const toolThreadId = toolCall.params?.threadId as string | undefined;
+            if (typeof timeoutSeconds !== "number") {
+              return { ok: false, error: { message: "Missing timeoutSeconds" } };
+            }
+            if (toolThreadId) {
+              setThreadId(toolThreadId);
+            }
+            const session = await setDesktopTimeout(timeoutSeconds, {
+              threadId: toolThreadId,
+              source: "chatkit",
+            });
+            return {
+              ok: true,
+              timeoutSeconds: session.timeoutSeconds,
+              expiresAt: session.expiresAt,
+            };
           }
           case "sandbox.python.run": {
             const code = toolCall.params?.code as string | undefined;
@@ -403,7 +425,7 @@ export function ChatKitPanel(): JSX.Element {
       setToolEventEmitter(null);
       return;
     }
-    setToolEventEmitter(() => emitChatkitToolEvent);
+    setToolEventEmitter(emitChatkitToolEvent);
     return () => setToolEventEmitter(null);
   }, [chatkitApiUrl, emitChatkitToolEvent, setToolEventEmitter]);
 

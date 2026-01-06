@@ -5,6 +5,8 @@ export type DesktopSandboxSession = {
   viewOnly: boolean;
   createdAt: number;
   lastActiveAt: number;
+  timeoutSeconds?: number;
+  expiresAt?: number;
 };
 
 export type PythonSandboxSession = {

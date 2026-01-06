@@ -11,6 +11,9 @@ export function Toolbar(props: {
   onTabChange: (tab: WorkspaceTab) => void;
   desktopStatus: string;
   pythonStatus: string;
+  desktopTimeLeft?: string | null;
+  onExtendDesktop?: () => void;
+  extendDesktopDisabled?: boolean;
 }): JSX.Element {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -26,9 +29,22 @@ export function Toolbar(props: {
           </button>
         ))}
       </div>
-      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
         <span className="pill">Desktop: {props.desktopStatus}</span>
+        {props.desktopTimeLeft ? (
+          <span className="pill">Time left: {props.desktopTimeLeft}</span>
+        ) : null}
         <span className="pill">Python: {props.pythonStatus}</span>
+        {props.onExtendDesktop ? (
+          <button
+            className="button"
+            type="button"
+            onClick={props.onExtendDesktop}
+            disabled={props.extendDesktopDisabled}
+          >
+            Extend +30m
+          </button>
+        ) : null}
       </div>
     </div>
   );

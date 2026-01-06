@@ -14,7 +14,7 @@ import type {
 } from "@/lib/types/desktopActions";
 import type { DesktopSandboxSession } from "@/lib/types/sandbox";
 
-const DESKTOP_TTL_SECONDS = 30 * 60;
+const DESKTOP_DEFAULT_TIMEOUT_SECONDS = 30 * 60;
 const DESKTOP_KEY_PREFIX = "desktop:";
 const DESKTOP_LOCK_PREFIX = "lock:desktop:";
 
@@ -31,6 +31,17 @@ async function connectDesktop(sandboxId: string) {
   return Sandbox.connect(sandboxId, { apiKey: config.e2bApiKey });
 }
 
+function resolveTimeoutSeconds(session?: DesktopSandboxSession | null): number {
+  if (!session) {
+    return DESKTOP_DEFAULT_TIMEOUT_SECONDS;
+  }
+  const timeoutSeconds = session.timeoutSeconds;
+  if (typeof timeoutSeconds === "number" && Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) {
+    return Math.floor(timeoutSeconds);
+  }
+  return DESKTOP_DEFAULT_TIMEOUT_SECONDS;
+}
+
 export async function desktopAction(
   params: DesktopActionApiRequest
 ): Promise<{ ok: true }> {
@@ -41,6 +52,7 @@ export async function desktopAction(
   }
 
   const desktop = await connectDesktop(session.sandboxId);
+  const timeoutSeconds = resolveTimeoutSeconds(session);
 
   switch (params.action) {
     case "click": {
@@ -97,13 +109,20 @@ export async function desktopAction(
   }
 
   const now = Date.now();
+  try {
+    await desktop.setTimeout(timeoutSeconds * 1000);
+  } catch (error) {
+    console.warn("Desktop setTimeout warning", error);
+  }
   await setJson(
     key,
     {
       ...session,
       lastActiveAt: now,
+      timeoutSeconds,
+      expiresAt: now + timeoutSeconds * 1000,
     } satisfies DesktopSandboxSession,
-    DESKTOP_TTL_SECONDS
+    timeoutSeconds
   );
 
   return { ok: true };
@@ -119,6 +138,7 @@ export async function desktopScreenshot(
   }
 
   const desktop = await connectDesktop(session.sandboxId);
+  const timeoutSeconds = resolveTimeoutSeconds(session);
   const imageBytes = await desktop.screenshot();
   const imageBase64 = Buffer.from(imageBytes).toString("base64");
 
@@ -141,13 +161,20 @@ export async function desktopScreenshot(
   }
 
   const now = Date.now();
+  try {
+    await desktop.setTimeout(timeoutSeconds * 1000);
+  } catch (error) {
+    console.warn("Desktop setTimeout warning", error);
+  }
   await setJson(
     key,
     {
       ...session,
       lastActiveAt: now,
+      timeoutSeconds,
+      expiresAt: now + timeoutSeconds * 1000,
     } satisfies DesktopSandboxSession,
-    DESKTOP_TTL_SECONDS
+    timeoutSeconds
   );
 
   return {
@@ -169,16 +196,18 @@ export async function desktopStart(params: {
   const existing = await getJson<DesktopSandboxSession>(key);
 
   if (existing) {
+    const timeoutSeconds = resolveTimeoutSeconds(existing);
     let streamUrl = existing.streamUrl;
     let authKey = existing.authKey;
+    let desktop: Sandbox | null = null;
 
     if (!streamUrl) {
-      const desktop = await connectDesktop(existing.sandboxId);
+      desktop = await connectDesktop(existing.sandboxId);
       await desktop.stream.start({ requireAuth });
       authKey = requireAuth ? desktop.stream.getAuthKey() : undefined;
       streamUrl = desktop.stream.getUrl({ authKey, viewOnly });
     } else if (existing.viewOnly !== viewOnly) {
-      const desktop = await connectDesktop(existing.sandboxId);
+      desktop = await connectDesktop(existing.sandboxId);
       streamUrl = desktop.stream.getUrl({ authKey, viewOnly });
     }
 
@@ -188,9 +217,28 @@ export async function desktopStart(params: {
       authKey,
       viewOnly,
       lastActiveAt: now,
+      timeoutSeconds,
+      expiresAt: now + timeoutSeconds * 1000,
     };
 
-    await setJson(key, session, DESKTOP_TTL_SECONDS);
+    if (desktop) {
+      try {
+        await desktop.setTimeout(timeoutSeconds * 1000);
+      } catch (error) {
+        console.warn("Desktop setTimeout warning", error);
+      }
+    } else {
+      try {
+        const config = getConfig();
+        await Sandbox.setTimeout(existing.sandboxId, timeoutSeconds * 1000, {
+          apiKey: config.e2bApiKey,
+        });
+      } catch (error) {
+        console.warn("Desktop setTimeout warning", error);
+      }
+    }
+
+    await setJson(key, session, timeoutSeconds);
     return session;
   }
 
@@ -206,7 +254,11 @@ export async function desktopStart(params: {
 
   try {
     const config = getConfig();
-    const desktop = await Sandbox.create({ apiKey: config.e2bApiKey });
+    const timeoutSeconds = DESKTOP_DEFAULT_TIMEOUT_SECONDS;
+    const desktop = await Sandbox.create({
+      apiKey: config.e2bApiKey,
+      timeoutMs: timeoutSeconds * 1000,
+    });
     await desktop.stream.start({ requireAuth });
     const authKey = requireAuth ? desktop.stream.getAuthKey() : undefined;
     const streamUrl = desktop.stream.getUrl({ authKey, viewOnly });
@@ -217,9 +269,11 @@ export async function desktopStart(params: {
       viewOnly,
       createdAt: now,
       lastActiveAt: now,
+      timeoutSeconds,
+      expiresAt: now + timeoutSeconds * 1000,
     };
 
-    await setJson(key, session, DESKTOP_TTL_SECONDS);
+    await setJson(key, session, timeoutSeconds);
     return session;
   } finally {
     await releaseLock(lockKey, token);
@@ -236,20 +290,29 @@ export async function desktopStop(params: {
   }
 
   const desktop = await connectDesktop(session.sandboxId);
+  const timeoutSeconds = resolveTimeoutSeconds(session);
   try {
     await desktop.stream.stop();
   } catch (error) {
     console.warn("Desktop stream stop warning", error);
   }
 
+  const now = Date.now();
   const updated: DesktopSandboxSession = {
     ...session,
     streamUrl: undefined,
     authKey: undefined,
-    lastActiveAt: Date.now(),
+    lastActiveAt: now,
+    timeoutSeconds,
+    expiresAt: now + timeoutSeconds * 1000,
   };
 
-  await setJson(key, updated, DESKTOP_TTL_SECONDS);
+  try {
+    await desktop.setTimeout(timeoutSeconds * 1000);
+  } catch (error) {
+    console.warn("Desktop setTimeout warning", error);
+  }
+  await setJson(key, updated, timeoutSeconds);
   return { stopped: true };
 }
 
@@ -257,7 +320,16 @@ export async function desktopGetStatus(params: {
   threadId: string;
 }): Promise<DesktopSandboxSession | null> {
   const key = getDesktopKey(params.threadId);
-  return await getJson<DesktopSandboxSession>(key);
+  const session = await getJson<DesktopSandboxSession>(key);
+  if (!session) {
+    return null;
+  }
+  const timeoutSeconds = resolveTimeoutSeconds(session);
+  return {
+    ...session,
+    timeoutSeconds,
+    expiresAt: session.expiresAt ?? session.lastActiveAt + timeoutSeconds * 1000,
+  } satisfies DesktopSandboxSession;
 }
 
 export async function desktopKill(params: {
@@ -273,4 +345,36 @@ export async function desktopKill(params: {
   await Sandbox.kill(session.sandboxId, { apiKey: config.e2bApiKey });
   await deleteKey(key);
   return { killed: true };
+}
+
+export async function desktopSetTimeout(params: {
+  threadId: string;
+  timeoutSeconds: number;
+}): Promise<DesktopSandboxSession> {
+  const key = getDesktopKey(params.threadId);
+  const session = await getJson<DesktopSandboxSession>(key);
+  if (!session) {
+    throw new Error("Desktop sandbox is not started. Run desktop start first.");
+  }
+
+  const timeoutSeconds = Math.floor(params.timeoutSeconds);
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+    throw new Error("timeoutSeconds must be a positive integer.");
+  }
+
+  const now = Date.now();
+  const config = getConfig();
+  await Sandbox.setTimeout(session.sandboxId, timeoutSeconds * 1000, {
+    apiKey: config.e2bApiKey,
+  });
+
+  const updated: DesktopSandboxSession = {
+    ...session,
+    lastActiveAt: now,
+    timeoutSeconds,
+    expiresAt: now + timeoutSeconds * 1000,
+  };
+
+  await setJson(key, updated, timeoutSeconds);
+  return updated;
 }

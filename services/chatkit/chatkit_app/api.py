@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from chatkit.server import NonStreamingResult, StreamingResult
 from chatkit.store import NotFoundError
 from chatkit.types import FileAttachment, ImageAttachment
-from pydantic import AnyUrl, TypeAdapter
+from pydantic import AnyUrl, BaseModel, TypeAdapter
 
 from .attachments import LocalAttachmentStore
 from .config import (
@@ -30,6 +30,24 @@ from .tracing import configure_tracing
 import aiofiles
 
 configure_tracing()
+
+def _rebuild_chatkit_pydantic_models() -> None:
+    import chatkit.types as chatkit_types
+
+    for value in vars(chatkit_types).values():
+        if (
+            isinstance(value, type)
+            and issubclass(value, BaseModel)
+            and value.__module__.startswith("chatkit.types")
+        ):
+            try:
+                value.model_rebuild()
+            except Exception:
+                # Best-effort; any failures will surface during request handling.
+                pass
+
+
+_rebuild_chatkit_pydantic_models()
 
 _ANY_URL_ADAPTER = TypeAdapter(AnyUrl)
 

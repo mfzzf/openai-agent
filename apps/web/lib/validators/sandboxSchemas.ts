@@ -18,6 +18,14 @@ export const desktopStatusSchema = z.object({
   threadId: z.string().min(1),
 });
 
+export const desktopTimeoutSchema = z.object({
+  threadId: z.string().min(1),
+  timeoutSeconds: z.preprocess(
+    (value) => (value === null ? undefined : value),
+    z.number().int().positive()
+  ),
+});
+
 export const desktopActionSchema = z.discriminatedUnion("action", [
   z.object({
     threadId: z.string().min(1),

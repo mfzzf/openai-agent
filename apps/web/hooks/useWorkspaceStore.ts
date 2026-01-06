@@ -33,6 +33,8 @@ export type WorkspaceState = {
     viewOnly: boolean;
     status: "idle" | "starting" | "ready" | "error";
     error?: string;
+    timeoutSeconds?: number;
+    expiresAt?: number;
   };
   setDesktop: (patch: Partial<WorkspaceState["desktop"]>) => void;
   python: {
@@ -65,6 +67,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     streamUrl: null,
     viewOnly: false,
     status: "idle",
+    timeoutSeconds: undefined,
+    expiresAt: undefined,
   },
   setDesktop: (patch) =>
     set((state) => ({

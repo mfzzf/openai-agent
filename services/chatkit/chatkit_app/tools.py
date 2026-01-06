@@ -45,6 +45,20 @@ def sandbox_desktop_stop(
     )
 
 
+@function_tool(name_override="sandbox_desktop_set_timeout")
+def sandbox_desktop_set_timeout(
+    ctx: ToolContext[Any],
+    timeoutSeconds: int,
+    threadId: Optional[str] = None,
+) -> dict[str, Any]:
+    thread_id = threadId or ctx.context.thread.id
+    return _tool_result(
+        ctx,
+        "sandbox.desktop.setTimeout",
+        {"threadId": thread_id, "timeoutSeconds": timeoutSeconds},
+    )
+
+
 @function_tool(name_override="sandbox_python_run")
 def sandbox_python_run(
     ctx: ToolContext[Any],
@@ -249,6 +263,7 @@ def ui_open_python_panel(ctx: ToolContext[Any]) -> dict[str, Any]:
 TOOL_NAME_MAP = {
     "sandbox_desktop_start": "sandbox.desktop.start",
     "sandbox_desktop_stop": "sandbox.desktop.stop",
+    "sandbox_desktop_set_timeout": "sandbox.desktop.setTimeout",
     "sandbox_python_run": "sandbox.python.run",
     "sandbox_desktop_click": "sandbox.desktop.click",
     "sandbox_desktop_type": "sandbox.desktop.type",
@@ -271,6 +286,7 @@ TOOL_NAMES = list(TOOL_NAME_MAP.keys())
 TOOLS = [
     sandbox_desktop_start,
     sandbox_desktop_stop,
+    sandbox_desktop_set_timeout,
     sandbox_python_run,
     sandbox_desktop_click,
     sandbox_desktop_type,

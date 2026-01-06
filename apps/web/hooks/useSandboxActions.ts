@@ -2,7 +2,7 @@
 
 import type { DesktopSandboxSession, PythonRunResult } from "@/lib/types/sandbox";
 import type { DesktopAction, DesktopScreenshotResult } from "@/lib/types/desktopActions";
-import { postJson } from "@/lib/apiClient";
+import { getJson, postJson } from "@/lib/apiClient";
 import { useWorkspaceStore } from "@/hooks/useWorkspaceStore";
 
 export function useSandboxActions() {
@@ -12,6 +12,9 @@ export function useSandboxActions() {
   const setPythonCode = useWorkspaceStore((state) => state.setPythonCode);
   const addEvent = useWorkspaceStore((state) => state.trace.addEvent);
   const emitToolEvent = useWorkspaceStore((state) => state.emitToolEvent);
+  const desktopTimeoutSeconds = useWorkspaceStore(
+    (state) => state.desktop.timeoutSeconds
+  );
 
   const ensureThreadId = (override?: string) => {
     if (override) {
@@ -46,6 +49,8 @@ export function useSandboxActions() {
         status: "ready",
         streamUrl: response.session.streamUrl ?? null,
         viewOnly: response.session.viewOnly,
+        timeoutSeconds: response.session.timeoutSeconds,
+        expiresAt: response.session.expiresAt,
         error: undefined,
       });
 
@@ -206,6 +211,11 @@ export function useSandboxActions() {
         "/api/sandbox/desktop/action",
         payload
       );
+      if (desktopTimeoutSeconds) {
+        setDesktop({
+          expiresAt: Date.now() + desktopTimeoutSeconds * 1000,
+        });
+      }
       addEvent({
         ts: Date.now(),
         type: "info",
@@ -273,7 +283,89 @@ export function useSandboxActions() {
       },
     });
 
+    if (desktopTimeoutSeconds) {
+      setDesktop({
+        expiresAt: Date.now() + desktopTimeoutSeconds * 1000,
+      });
+    }
+
     return response.screenshot;
+  };
+
+  const getDesktopStatus = async (opts?: {
+    threadId?: string;
+  }): Promise<DesktopSandboxSession | null> => {
+    const activeThreadId = ensureThreadId(opts?.threadId);
+    const response = await getJson<{ ok: true; session: DesktopSandboxSession | null }>(
+      `/api/sandbox/desktop/status?threadId=${encodeURIComponent(activeThreadId)}`
+    );
+
+    setDesktop({
+      timeoutSeconds: response.session?.timeoutSeconds,
+      expiresAt: response.session?.expiresAt,
+    });
+
+    return response.session;
+  };
+
+  const setDesktopTimeout = async (
+    timeoutSeconds: number,
+    opts?: { threadId?: string; source?: "chatkit" | "manual" | "system" }
+  ): Promise<DesktopSandboxSession> => {
+    const activeThreadId = ensureThreadId(opts?.threadId);
+
+    try {
+      const response = await postJson<{ ok: true; session: DesktopSandboxSession }>(
+        "/api/sandbox/desktop/timeout",
+        { threadId: activeThreadId, timeoutSeconds }
+      );
+
+      setDesktop({
+        timeoutSeconds: response.session.timeoutSeconds,
+        expiresAt: response.session.expiresAt,
+      });
+
+      addEvent({
+        ts: Date.now(),
+        type: "info",
+        title: "desktop.timeout",
+        detail: {
+          threadId: activeThreadId,
+          timeoutSeconds: response.session.timeoutSeconds ?? timeoutSeconds,
+        },
+      });
+
+      const source = opts?.source ?? "manual";
+      if (source !== "chatkit") {
+        void emitToolEvent({
+          tool: "sandbox.desktop.setTimeout",
+          params: { threadId: activeThreadId, timeoutSeconds },
+          result: {
+            ok: true,
+            timeoutSeconds: response.session.timeoutSeconds,
+            expiresAt: response.session.expiresAt,
+          },
+          status: "success",
+          source,
+        });
+      }
+
+      return response.session;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to update desktop timeout";
+      const source = opts?.source ?? "manual";
+      if (source !== "chatkit") {
+        void emitToolEvent({
+          tool: "sandbox.desktop.setTimeout",
+          params: { threadId: activeThreadId, timeoutSeconds },
+          result: { ok: false, error: { message } },
+          status: "error",
+          source,
+        });
+      }
+      throw error;
+    }
   };
 
   return {
@@ -282,5 +374,7 @@ export function useSandboxActions() {
     runPython,
     runDesktopAction,
     takeDesktopScreenshot,
+    getDesktopStatus,
+    setDesktopTimeout,
   };
 }

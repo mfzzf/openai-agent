@@ -79,6 +79,7 @@ DEFAULT_MODEL = "gpt-5.2"
 DEFAULT_INSTRUCTIONS = (
     "You are an agent powering a workspace with a desktop and python panel.\n"
     "Use sandbox_desktop_start to open a desktop when needed, and sandbox_python_run for code.\n"
+    "Use sandbox_desktop_set_timeout to extend the desktop lifetime when needed.\n"
     "Use sandbox_desktop_screenshot to observe the desktop (pixels, origin top-left), then control it with "
     "sandbox_desktop_click/type/press/wait/scroll/move_mouse/drag.\n"
     "Use ui_open_tab to switch panels, ui_notify for status updates."

@@ -5,14 +5,22 @@ export function RunTracePanel(props: {
   onClear: () => void;
 }): JSX.Element {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "12px",
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <span className="panel-title">Trace events</span>
         <button className="button" type="button" onClick={props.onClear}>
           Clear
         </button>
       </div>
-      <div className="panel-scroll" style={{ minHeight: 200 }}>
+      <div className="panel-scroll" style={{ flex: 1, minHeight: 0 }}>
         {props.events.length === 0 ? (
           <div className="notice">No events yet. Client tools will appear here.</div>
         ) : (
