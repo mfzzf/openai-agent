@@ -14,6 +14,18 @@ services:
       - "4318:4318"
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+  new-api:
+    image: calciumion/new-api:latest
+    container_name: new-api
+    restart: always
+    ports:
+      - "18080:3000"
+    environment:
+      - SQL_DSN=root:Mei123123!@tcp(172.17.0.5:3306)/newapi
+      - TZ=Asia/Shanghai
+    volumes:
+      - new-api-data:/data
 
 volumes:
   redis-data:
+  new-api-data:

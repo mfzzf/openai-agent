@@ -16,7 +16,7 @@ const jetBrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "OpenAI Agent Workspace",
-  description: "ChatKit-powered agent workspace with E2B Desktop and Python sandboxes.",
+  description: "ChatKit-powered agent workspace with UCloud Sandbox Desktop and Python sandboxes.",
 };
 
 export default function RootLayout({

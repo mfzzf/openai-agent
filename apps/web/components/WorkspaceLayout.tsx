@@ -22,7 +22,7 @@ export function WorkspaceLayout(props: {
             <div className="panel-title">Workspace</div>
             <div className="panel-subtitle">Desktop, Python, and run trace</div>
           </div>
-          <span className="pill">E2B</span>
+          <span className="pill">UCloud Sandbox</span>
         </div>
         <div className="panel-body">{props.right}</div>
       </section>

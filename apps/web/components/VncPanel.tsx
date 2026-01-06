@@ -40,7 +40,7 @@ export function VncPanel(props: {
           src={props.streamUrl}
           sandbox="allow-scripts allow-forms allow-same-origin"
           referrerPolicy="no-referrer"
-          title="E2B Desktop"
+          title="Sandbox Desktop"
         />
       )}
     </div>
