@@ -65,16 +65,20 @@ def sandbox_python_run(
     code: str,
     threadId: Optional[str] = None,
     timeoutSeconds: Optional[int] = None,
+    language: Optional[str] = None,
 ) -> dict[str, Any]:
     thread_id = threadId or ctx.context.thread.id
+    payload: dict[str, Any] = {
+        "threadId": thread_id,
+        "code": code,
+        "timeoutSeconds": timeoutSeconds,
+    }
+    if language:
+        payload["language"] = language
     return _tool_result(
         ctx,
         "sandbox.python.run",
-        {
-            "threadId": thread_id,
-            "code": code,
-            "timeoutSeconds": timeoutSeconds,
-        },
+        payload,
     )
 
 

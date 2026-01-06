@@ -75,6 +75,7 @@ export async function pythonRun(params: PythonRunRequest): Promise<PythonRunResu
   const execution = await sandbox.runCode(params.code, {
     envs: params.envs,
     timeoutMs: params.timeoutSeconds ? params.timeoutSeconds * 1000 : undefined,
+    ...(params.language ? { language: params.language } : {}),
   });
 
   const results: PythonRunResult["results"] = [];

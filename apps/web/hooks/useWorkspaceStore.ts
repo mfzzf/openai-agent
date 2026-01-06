@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { PythonRunResult } from "@/lib/types/sandbox";
+import type { CodeLanguage, PythonRunResult } from "@/lib/types/sandbox";
 
 export type WorkspaceTab = "desktop" | "python" | "trace";
 
@@ -26,6 +26,8 @@ const DEFAULT_PYTHON_CODE = "import math\n\n[(n, math.sqrt(n)) for n in range(1,
 export type WorkspaceState = {
   threadId: string | null;
   setThreadId: (threadId: string | null) => void;
+  sandboxThreadId: string | null;
+  setSandboxThreadId: (threadId: string | null) => void;
   activeTab: WorkspaceTab;
   setActiveTab: (tab: WorkspaceTab) => void;
   desktop: {
@@ -38,6 +40,7 @@ export type WorkspaceState = {
   };
   setDesktop: (patch: Partial<WorkspaceState["desktop"]>) => void;
   python: {
+    language: CodeLanguage;
     code: string;
     status: "idle" | "ready" | "running" | "error";
     lastResult?: PythonRunResult;
@@ -45,6 +48,7 @@ export type WorkspaceState = {
   };
   setPython: (patch: Partial<WorkspaceState["python"]>) => void;
   setPythonCode: (code: string) => void;
+  setPythonLanguage: (language: CodeLanguage) => void;
   trace: {
     events: TraceEvent[];
     addEvent: (event: TraceEvent) => void;
@@ -61,6 +65,8 @@ export type WorkspaceState = {
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   threadId: null,
   setThreadId: (threadId) => set({ threadId }),
+  sandboxThreadId: null,
+  setSandboxThreadId: (sandboxThreadId) => set({ sandboxThreadId }),
   activeTab: "desktop",
   setActiveTab: (tab) => set({ activeTab: tab }),
   desktop: {
@@ -78,6 +84,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })),
   python: {
+    language: "python",
     code: DEFAULT_PYTHON_CODE,
     status: "idle",
   },
@@ -93,6 +100,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       python: {
         ...state.python,
         code,
+      },
+    })),
+  setPythonLanguage: (language) =>
+    set((state) => ({
+      python: {
+        ...state.python,
+        language,
       },
     })),
   trace: {

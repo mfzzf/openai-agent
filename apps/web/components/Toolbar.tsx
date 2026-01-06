@@ -2,7 +2,7 @@ import type { WorkspaceTab } from "@/hooks/useWorkspaceStore";
 
 const TAB_LABELS: Record<WorkspaceTab, string> = {
   desktop: "Desktop",
-  python: "Python",
+  python: "Code",
   trace: "Trace",
 };
 
@@ -34,7 +34,7 @@ export function Toolbar(props: {
         {props.desktopTimeLeft ? (
           <span className="pill">Time left: {props.desktopTimeLeft}</span>
         ) : null}
-        <span className="pill">Python: {props.pythonStatus}</span>
+        <span className="pill">Code: {props.pythonStatus}</span>
         {props.onExtendDesktop ? (
           <button
             className="button"

@@ -1,12 +1,18 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import type { PythonRunResult } from "@/lib/types/sandbox";
+import type { CodeLanguage, PythonRunResult } from "@/lib/types/sandbox";
 
 export function PythonPanel(props: {
+  language: CodeLanguage;
+  onLanguageChange: (language: CodeLanguage) => void;
   code: string;
   onCodeChange: (code: string) => void;
-  onRun: (code: string, timeoutSeconds?: number) => Promise<PythonRunResult>;
+  onRun: (
+    code: string,
+    timeoutSeconds: number | undefined,
+    language: CodeLanguage
+  ) => Promise<PythonRunResult>;
   lastResult?: PythonRunResult;
   status: "idle" | "ready" | "running" | "error";
   error?: string;
@@ -18,7 +24,8 @@ export function PythonPanel(props: {
     try {
       await props.onRun(
         props.code,
-        Number.isFinite(timeoutSeconds) ? timeoutSeconds : undefined
+        Number.isFinite(timeoutSeconds) ? timeoutSeconds : undefined,
+        props.language
       );
     } catch {
       // Errors are surfaced via the workspace store.
@@ -34,8 +41,26 @@ export function PythonPanel(props: {
           onClick={handleRun}
           disabled={props.status === "running"}
         >
-          {props.status === "running" ? "Running..." : "Run Python"}
+          {props.status === "running" ? "Running..." : "Run Code"}
         </button>
+        <label style={{ fontSize: 13, color: "var(--muted)" }}>
+          Language
+          <select
+            value={props.language}
+            onChange={(event) => props.onLanguageChange(event.target.value as CodeLanguage)}
+            style={{
+              marginLeft: 8,
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              padding: "4px 6px",
+            }}
+            disabled={props.status === "running"}
+          >
+            <option value="python">python</option>
+            <option value="go">go</option>
+            <option value="js">js</option>
+          </select>
+        </label>
         <label style={{ fontSize: 13, color: "var(--muted)" }}>
           Timeout (s)
           <input
@@ -101,7 +126,7 @@ function ResultRenderer(props: {
   if (mime === "image/png") {
     return (
       <OutputBlock label="Result (image/png)">
-        <img src={`data:image/png;base64,${data}`} alt="Python output" />
+        <img src={`data:image/png;base64,${data}`} alt="Code output" />
       </OutputBlock>
     );
   }
@@ -109,7 +134,7 @@ function ResultRenderer(props: {
   if (mime === "image/jpeg") {
     return (
       <OutputBlock label="Result (image/jpeg)">
-        <img src={`data:image/jpeg;base64,${data}`} alt="Python output" />
+        <img src={`data:image/jpeg;base64,${data}`} alt="Code output" />
       </OutputBlock>
     );
   }
@@ -118,7 +143,7 @@ function ResultRenderer(props: {
     return (
       <OutputBlock label="Result (text/html)">
         <iframe
-          title="Python HTML output"
+          title="Code HTML output"
           style={{ border: "none", width: "100%", minHeight: 240 }}
           srcDoc={data}
         />
@@ -131,7 +156,7 @@ function ResultRenderer(props: {
       <OutputBlock label="Result (image/svg+xml)">
         <img
           src={`data:image/svg+xml;utf8,${encodeURIComponent(data)}`}
-          alt="Python output"
+          alt="Code output"
         />
       </OutputBlock>
     );
@@ -141,7 +166,7 @@ function ResultRenderer(props: {
     return (
       <OutputBlock label="Result (application/pdf)">
         <iframe
-          title="Python PDF output"
+          title="Code PDF output"
           style={{ border: "none", width: "100%", minHeight: 360 }}
           src={`data:application/pdf;base64,${data}`}
         />

@@ -29,11 +29,13 @@ function formatRemaining(seconds: number): string {
 export function WorkspaceShell() {
   const activeTab = useWorkspaceStore((state) => state.activeTab);
   const setActiveTab = useWorkspaceStore((state) => state.setActiveTab);
-  const threadId = useWorkspaceStore((state) => state.threadId);
+  const sandboxThreadId = useWorkspaceStore((state) => state.sandboxThreadId);
   const desktop = useWorkspaceStore((state) => state.desktop);
   const python = useWorkspaceStore((state) => state.python);
   const pythonCode = useWorkspaceStore((state) => state.python.code);
+  const pythonLanguage = useWorkspaceStore((state) => state.python.language);
   const setPythonCode = useWorkspaceStore((state) => state.setPythonCode);
+  const setPythonLanguage = useWorkspaceStore((state) => state.setPythonLanguage);
   const trace = useWorkspaceStore((state) => state.trace);
   const { startDesktop, stopDesktop, runPython, getDesktopStatus, setDesktopTimeout } =
     useSandboxActions();
@@ -46,13 +48,17 @@ export function WorkspaceShell() {
   }, []);
 
   useEffect(() => {
-    if (!threadId) {
+    if (!sandboxThreadId) {
+      return;
+    }
+
+    if (desktop.status === "idle") {
       return;
     }
 
     const refresh = async () => {
       try {
-        await getDesktopStatus({ threadId });
+        await getDesktopStatus({ threadId: sandboxThreadId });
       } catch {
         // Ignore status polling errors.
       }
@@ -61,7 +67,7 @@ export function WorkspaceShell() {
     void refresh();
     const id = setInterval(refresh, 15_000);
     return () => clearInterval(id);
-  }, [getDesktopStatus, threadId]);
+  }, [desktop.status, getDesktopStatus, sandboxThreadId]);
 
   const desktopTimeLeft = useMemo(() => {
     if (!desktop.expiresAt) {
@@ -71,7 +77,7 @@ export function WorkspaceShell() {
     return formatRemaining(remaining);
   }, [desktop.expiresAt, now]);
 
-  const canExtendDesktop = Boolean(threadId && desktop.expiresAt);
+  const canExtendDesktop = Boolean(sandboxThreadId && desktop.expiresAt);
   const handleExtendDesktop = () => {
     if (!canExtendDesktop) {
       return;
@@ -127,9 +133,13 @@ export function WorkspaceShell() {
           )}
           {activeTab === "python" && (
             <PythonPanel
+              language={pythonLanguage}
+              onLanguageChange={setPythonLanguage}
               code={pythonCode}
               onCodeChange={setPythonCode}
-              onRun={runPython}
+              onRun={(code, timeoutSeconds, language) =>
+                runPython(code, timeoutSeconds, language)
+              }
               lastResult={python.lastResult}
               status={python.status}
               error={python.error}

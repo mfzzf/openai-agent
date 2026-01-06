@@ -1,15 +1,40 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { ChatKit, useChatKit } from "@openai/chatkit-react";
 import { useChatKitSession } from "@/hooks/useChatKitSession";
 import { useSandboxActions } from "@/hooks/useSandboxActions";
 import { useWorkspaceStore, type ToolEvent } from "@/hooks/useWorkspaceStore";
 
+const TOOL_REDACT_KEYS = new Set([
+  "streamUrl",
+  "authKey",
+  "imageBase64",
+  "data",
+  "fileData",
+  "file_data",
+]);
+
+function sanitizeToolPayload(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeToolPayload(entry));
+  }
+  if (value && typeof value === "object") {
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      output[key] = TOOL_REDACT_KEYS.has(key)
+        ? "[redacted]"
+        : sanitizeToolPayload(entry);
+    }
+    return output;
+  }
+  return value;
+}
+
 export function ChatKitPanel(): JSX.Element {
   const { getClientSecret } = useChatKitSession();
-  const threadId = useWorkspaceStore((state) => state.threadId);
   const setThreadId = useWorkspaceStore((state) => state.setThreadId);
+  const setSandboxThreadId = useWorkspaceStore((state) => state.setSandboxThreadId);
   const setActiveTab = useWorkspaceStore((state) => state.setActiveTab);
   const setDesktop = useWorkspaceStore((state) => state.setDesktop);
   const addEvent = useWorkspaceStore((state) => state.trace.addEvent);
@@ -43,63 +68,7 @@ export function ChatKitPanel(): JSX.Element {
     process.env.NEXT_PUBLIC_CHATKIT_UPLOAD_URL ??
     resolvedUploadUrl();
 
-  const toolRedactKeys = new Set([
-    "streamUrl",
-    "authKey",
-    "imageBase64",
-    "data",
-    "fileData",
-    "file_data",
-  ]);
-  const sanitizeToolPayload = (value: unknown): unknown => {
-    if (Array.isArray(value)) {
-      return value.map((entry) => sanitizeToolPayload(entry));
-    }
-    if (value && typeof value === "object") {
-      const output: Record<string, unknown> = {};
-      for (const [key, entry] of Object.entries(
-        value as Record<string, unknown>
-      )) {
-        output[key] = toolRedactKeys.has(key)
-          ? "[redacted]"
-          : sanitizeToolPayload(entry);
-      }
-      return output;
-    }
-    return value;
-  };
-
-  const emitChatkitToolEvent = async (event: ToolEvent) => {
-    if (!chatkitApiUrl) {
-      return;
-    }
-    try {
-      await sendCustomAction({
-        type: "tool",
-        payload: {
-          type: "tool",
-          tool: event.tool,
-          params: sanitizeToolPayload(event.params ?? {}),
-          result: sanitizeToolPayload(event.result),
-          status: event.status,
-          source: event.source,
-          callId: event.callId,
-        },
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to record tool event";
-      addEvent({
-        ts: Date.now(),
-        type: "error",
-        title: "tool:send_error",
-        detail: { message },
-      });
-    }
-  };
-
-  const { control, sendCustomAction, setThreadId: setChatKitThreadId } =
-    useChatKit({
+  const { control, sendCustomAction } = useChatKit({
     api: chatkitApiUrl
       ? {
           url: chatkitApiUrl,
@@ -120,10 +89,13 @@ export function ChatKitPanel(): JSX.Element {
       },
     },
     onThreadChange(event) {
-      if (!event.threadId) {
-        return;
+      setThreadId(event.threadId ?? null);
+      if (event.threadId) {
+        const current = useWorkspaceStore.getState().sandboxThreadId;
+        if (!current) {
+          setSandboxThreadId(event.threadId);
+        }
       }
-      setThreadId(event.threadId);
       addEvent({
         ts: Date.now(),
         type: "info",
@@ -190,6 +162,7 @@ export function ChatKitPanel(): JSX.Element {
             const toolThreadId = toolCall.params?.threadId as string | undefined;
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             const session = await startDesktop({
               viewOnly,
@@ -218,6 +191,7 @@ export function ChatKitPanel(): JSX.Element {
             }
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             const session = await setDesktopTimeout(timeoutSeconds, {
               threadId: toolThreadId,
@@ -231,6 +205,7 @@ export function ChatKitPanel(): JSX.Element {
           }
           case "sandbox.python.run": {
             const code = toolCall.params?.code as string | undefined;
+            const language = toolCall.params?.language as "python" | "go" | "js" | undefined;
             const timeoutSeconds = toolCall.params?.timeoutSeconds as
               | number
               | undefined;
@@ -240,10 +215,12 @@ export function ChatKitPanel(): JSX.Element {
             }
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             const result = await runPython(
               code,
               timeoutSeconds,
+              language,
               toolThreadId,
               { source: "chatkit" }
             );
@@ -265,6 +242,7 @@ export function ChatKitPanel(): JSX.Element {
             }
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             await runDesktopAction(
               { action: "click", x, y, button, double },
@@ -283,6 +261,7 @@ export function ChatKitPanel(): JSX.Element {
             }
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             await runDesktopAction(
               { action: "type", text, chunkSize, delayInMs },
@@ -299,6 +278,7 @@ export function ChatKitPanel(): JSX.Element {
             }
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             await runDesktopAction(
               { action: "press", keys },
@@ -315,6 +295,7 @@ export function ChatKitPanel(): JSX.Element {
             }
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             await runDesktopAction(
               { action: "wait", ms },
@@ -332,6 +313,7 @@ export function ChatKitPanel(): JSX.Element {
             const toolThreadId = toolCall.params?.threadId as string | undefined;
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             await runDesktopAction(
               { action: "scroll", direction, amount },
@@ -352,6 +334,7 @@ export function ChatKitPanel(): JSX.Element {
             }
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             await runDesktopAction(
               { action: "moveMouse", x, y },
@@ -376,6 +359,7 @@ export function ChatKitPanel(): JSX.Element {
             }
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             await runDesktopAction(
               { action: "drag", fromX, fromY, toX, toY },
@@ -394,6 +378,7 @@ export function ChatKitPanel(): JSX.Element {
               | undefined;
             if (toolThreadId) {
               setThreadId(toolThreadId);
+              setSandboxThreadId(toolThreadId);
             }
             const screenshot = await takeDesktopScreenshot({
               threadId: toolThreadId,
@@ -425,36 +410,37 @@ export function ChatKitPanel(): JSX.Element {
     },
   });
 
-  const didSeedThreadRef = useRef(false);
-  useEffect(() => {
-    if (threadId || didSeedThreadRef.current) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      const currentThreadId = useWorkspaceStore.getState().threadId;
-      if (currentThreadId || didSeedThreadRef.current) {
+  const emitChatkitToolEvent = useCallback(
+    async (event: ToolEvent) => {
+      if (!chatkitApiUrl) {
         return;
       }
-
-      const generated =
-        typeof crypto?.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `thread-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-      didSeedThreadRef.current = true;
-      setThreadId(generated);
-      setChatKitThreadId(generated);
-      addEvent({
-        ts: Date.now(),
-        type: "info",
-        title: "thread.seeded",
-        detail: { threadId: generated },
-      });
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [addEvent, setChatKitThreadId, setThreadId, threadId]);
+      try {
+        await sendCustomAction({
+          type: "tool",
+          payload: {
+            type: "tool",
+            tool: event.tool,
+            params: sanitizeToolPayload(event.params ?? {}),
+            result: sanitizeToolPayload(event.result),
+            status: event.status,
+            source: event.source,
+            callId: event.callId,
+          },
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to record tool event";
+        addEvent({
+          ts: Date.now(),
+          type: "error",
+          title: "tool:send_error",
+          detail: { message },
+        });
+      }
+    },
+    [addEvent, chatkitApiUrl, sendCustomAction]
+  );
 
   useEffect(() => {
     if (!chatkitApiUrl) {

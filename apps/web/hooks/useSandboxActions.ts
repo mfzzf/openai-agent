@@ -1,380 +1,464 @@
 "use client";
 
-import type { DesktopSandboxSession, PythonRunResult } from "@/lib/types/sandbox";
+import { useCallback, useMemo } from "react";
+import type { CodeLanguage, DesktopSandboxSession, PythonRunResult } from "@/lib/types/sandbox";
 import type { DesktopAction, DesktopScreenshotResult } from "@/lib/types/desktopActions";
 import { getJson, postJson } from "@/lib/apiClient";
 import { useWorkspaceStore } from "@/hooks/useWorkspaceStore";
 
+function generateThreadId(): string {
+  if (typeof crypto?.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `thread-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export function useSandboxActions() {
   const threadId = useWorkspaceStore((state) => state.threadId);
+  const sandboxThreadId = useWorkspaceStore((state) => state.sandboxThreadId);
+  const setSandboxThreadId = useWorkspaceStore((state) => state.setSandboxThreadId);
   const setDesktop = useWorkspaceStore((state) => state.setDesktop);
   const setPython = useWorkspaceStore((state) => state.setPython);
   const setPythonCode = useWorkspaceStore((state) => state.setPythonCode);
+  const setPythonLanguage = useWorkspaceStore((state) => state.setPythonLanguage);
   const addEvent = useWorkspaceStore((state) => state.trace.addEvent);
   const emitToolEvent = useWorkspaceStore((state) => state.emitToolEvent);
   const desktopTimeoutSeconds = useWorkspaceStore(
     (state) => state.desktop.timeoutSeconds
   );
 
-  const ensureThreadId = (override?: string) => {
-    if (override) {
-      return override;
-    }
-    if (!threadId) {
-      throw new Error("Thread is not ready yet.");
-    }
-    return threadId;
-  };
+  const ensureSandboxThreadId = useCallback(
+    (override?: string) => {
+      if (override) {
+        return override;
+      }
 
-  const startDesktop = async (opts?: {
-    viewOnly?: boolean;
-    requireAuth?: boolean;
-    threadId?: string;
-    source?: "chatkit" | "manual" | "system";
-  }): Promise<DesktopSandboxSession> => {
-    const activeThreadId = ensureThreadId(opts?.threadId);
-    setDesktop({ status: "starting", error: undefined });
+      const existing = sandboxThreadId ?? threadId;
+      if (existing) {
+        if (!sandboxThreadId) {
+          setSandboxThreadId(existing);
+        }
+        return existing;
+      }
 
-    try {
+      const generated = generateThreadId();
+      setSandboxThreadId(generated);
+      return generated;
+    },
+    [sandboxThreadId, setSandboxThreadId, threadId]
+  );
+
+  const startDesktop = useCallback(
+    async (opts?: {
+      viewOnly?: boolean;
+      requireAuth?: boolean;
+      threadId?: string;
+      source?: "chatkit" | "manual" | "system";
+    }): Promise<DesktopSandboxSession> => {
+      const activeThreadId = ensureSandboxThreadId(opts?.threadId);
+      setDesktop({ status: "starting", error: undefined });
+
+      try {
+        const response = await postJson<{
+          ok: true;
+          session: DesktopSandboxSession;
+        }>("/api/sandbox/desktop/start", {
+          threadId: activeThreadId,
+          viewOnly: opts?.viewOnly ?? false,
+          requireAuth: opts?.requireAuth ?? true,
+        });
+
+        setDesktop({
+          status: "ready",
+          streamUrl: response.session.streamUrl ?? null,
+          viewOnly: response.session.viewOnly,
+          timeoutSeconds: response.session.timeoutSeconds,
+          expiresAt: response.session.expiresAt,
+          error: undefined,
+        });
+
+        addEvent({
+          ts: Date.now(),
+          type: "info",
+          title: "desktop.started",
+          detail: response.session,
+        });
+
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: "sandbox.desktop.start",
+            params: {
+              threadId: activeThreadId,
+              viewOnly: opts?.viewOnly ?? false,
+              requireAuth: opts?.requireAuth ?? true,
+            },
+            result: {
+              ok: true,
+              viewOnly: response.session.viewOnly,
+            },
+            status: "success",
+            source,
+          });
+        }
+
+        return response.session;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Desktop start failed";
+        setDesktop({ status: "error", error: message });
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: "sandbox.desktop.start",
+            params: {
+              threadId: activeThreadId,
+              viewOnly: opts?.viewOnly ?? false,
+              requireAuth: opts?.requireAuth ?? true,
+            },
+            result: { ok: false, error: { message } },
+            status: "error",
+            source,
+          });
+        }
+        throw error;
+      }
+    },
+    [addEvent, emitToolEvent, ensureSandboxThreadId, setDesktop]
+  );
+
+  const stopDesktop = useCallback(
+    async (opts?: {
+      threadId?: string;
+      source?: "chatkit" | "manual" | "system";
+    }): Promise<void> => {
+      const activeThreadId = ensureSandboxThreadId(opts?.threadId);
+      try {
+        await postJson<{ ok: true; stopped: boolean }>(
+          "/api/sandbox/desktop/stop",
+          { threadId: activeThreadId }
+        );
+        setDesktop({ status: "idle", streamUrl: null });
+        addEvent({ ts: Date.now(), type: "info", title: "desktop.stopped" });
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: "sandbox.desktop.stop",
+            params: { threadId: activeThreadId },
+            result: { ok: true },
+            status: "success",
+            source,
+          });
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Desktop stop failed";
+        setDesktop({ status: "error", error: message });
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: "sandbox.desktop.stop",
+            params: { threadId: activeThreadId },
+            result: { ok: false, error: { message } },
+            status: "error",
+            source,
+          });
+        }
+        throw error;
+      }
+    },
+    [addEvent, emitToolEvent, ensureSandboxThreadId, setDesktop]
+  );
+
+  const runPython = useCallback(
+    async (
+      code: string,
+      timeoutSeconds?: number,
+      language?: CodeLanguage,
+      threadIdOverride?: string,
+      opts?: { source?: "chatkit" | "manual" | "system" }
+    ): Promise<PythonRunResult> => {
+      const activeThreadId = ensureSandboxThreadId(threadIdOverride);
+      setPythonCode(code);
+      if (language) {
+        setPythonLanguage(language);
+      }
+      setPython({ status: "running", error: undefined });
+
+      try {
+        const response = await postJson<{ ok: true; result: PythonRunResult }>(
+          "/api/sandbox/python/run",
+          {
+            threadId: activeThreadId,
+            code,
+            language,
+            timeoutSeconds,
+          }
+        );
+
+        setPython({
+          status: "ready",
+          lastResult: response.result,
+          error: undefined,
+        });
+        addEvent({ ts: Date.now(), type: "info", title: "python.run" });
+        const status = response.result?.error ? "error" : "success";
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: "sandbox.python.run",
+            params: {
+              threadId: activeThreadId,
+              code,
+              language,
+              timeoutSeconds,
+            },
+            result: response.result,
+            status,
+            source,
+          });
+        }
+        return response.result;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Python run failed";
+        setPython({ status: "error", error: message });
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: "sandbox.python.run",
+            params: {
+              threadId: activeThreadId,
+              code,
+              language,
+              timeoutSeconds,
+            },
+            result: { ok: false, error: { message } },
+            status: "error",
+            source,
+          });
+        }
+        throw error;
+      }
+    },
+    [
+      addEvent,
+      emitToolEvent,
+      ensureSandboxThreadId,
+      setPython,
+      setPythonCode,
+      setPythonLanguage,
+    ]
+  );
+
+  const runDesktopAction = useCallback(
+    async (
+      action: DesktopAction,
+      opts?: { threadId?: string; source?: "chatkit" | "manual" | "system" }
+    ): Promise<void> => {
+      const activeThreadId = ensureSandboxThreadId(opts?.threadId);
+      const payload = { threadId: activeThreadId, ...action };
+
+      try {
+        await postJson<{ ok: true; result: { ok: true } }>(
+          "/api/sandbox/desktop/action",
+          payload
+        );
+        if (desktopTimeoutSeconds) {
+          setDesktop({
+            expiresAt: Date.now() + desktopTimeoutSeconds * 1000,
+          });
+        }
+        addEvent({
+          ts: Date.now(),
+          type: "info",
+          title: `desktop.${action.action}`,
+          detail: payload,
+        });
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: `sandbox.desktop.${action.action}`,
+            params: payload,
+            result: { ok: true },
+            status: "success",
+            source,
+          });
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Desktop action failed";
+        addEvent({
+          ts: Date.now(),
+          type: "error",
+          title: `desktop.${action.action}:error`,
+          detail: { message, payload },
+        });
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: `sandbox.desktop.${action.action}`,
+            params: payload,
+            result: { ok: false, error: { message } },
+            status: "error",
+            source,
+          });
+        }
+        throw error;
+      }
+    },
+    [
+      addEvent,
+      desktopTimeoutSeconds,
+      emitToolEvent,
+      ensureSandboxThreadId,
+      setDesktop,
+    ]
+  );
+
+  const takeDesktopScreenshot = useCallback(
+    async (opts?: {
+      threadId?: string;
+      includeCursor?: boolean;
+      includeScreenSize?: boolean;
+    }): Promise<DesktopScreenshotResult> => {
+      const activeThreadId = ensureSandboxThreadId(opts?.threadId);
       const response = await postJson<{
         ok: true;
-        session: DesktopSandboxSession;
-      }>("/api/sandbox/desktop/start", {
+        screenshot: DesktopScreenshotResult;
+      }>("/api/sandbox/desktop/screenshot", {
         threadId: activeThreadId,
-        viewOnly: opts?.viewOnly ?? false,
-        requireAuth: opts?.requireAuth ?? true,
-      });
-
-      setDesktop({
-        status: "ready",
-        streamUrl: response.session.streamUrl ?? null,
-        viewOnly: response.session.viewOnly,
-        timeoutSeconds: response.session.timeoutSeconds,
-        expiresAt: response.session.expiresAt,
-        error: undefined,
+        includeCursor: opts?.includeCursor ?? true,
+        includeScreenSize: opts?.includeScreenSize ?? true,
       });
 
       addEvent({
         ts: Date.now(),
         type: "info",
-        title: "desktop.started",
-        detail: response.session,
+        title: "desktop.screenshot",
+        detail: {
+          threadId: activeThreadId,
+          mime: response.screenshot.mime,
+          screenSize: response.screenshot.screenSize,
+          cursorPosition: response.screenshot.cursorPosition,
+          imageBytes: Math.floor(
+            (response.screenshot.imageBase64.length * 3) / 4
+          ),
+        },
       });
 
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: "sandbox.desktop.start",
-          params: {
-            threadId: activeThreadId,
-            viewOnly: opts?.viewOnly ?? false,
-            requireAuth: opts?.requireAuth ?? true,
-          },
-          result: {
-            ok: true,
-            viewOnly: response.session.viewOnly,
-          },
-          status: "success",
-          source,
-        });
-      }
-
-      return response.session;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Desktop start failed";
-      setDesktop({ status: "error", error: message });
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: "sandbox.desktop.start",
-          params: {
-            threadId: activeThreadId,
-            viewOnly: opts?.viewOnly ?? false,
-            requireAuth: opts?.requireAuth ?? true,
-          },
-          result: { ok: false, error: { message } },
-          status: "error",
-          source,
-        });
-      }
-      throw error;
-    }
-  };
-
-  const stopDesktop = async (opts?: {
-    threadId?: string;
-    source?: "chatkit" | "manual" | "system";
-  }): Promise<void> => {
-    const activeThreadId = ensureThreadId(opts?.threadId);
-    try {
-      await postJson<{ ok: true; stopped: boolean }>(
-        "/api/sandbox/desktop/stop",
-        { threadId: activeThreadId }
-      );
-      setDesktop({ status: "idle", streamUrl: null });
-      addEvent({ ts: Date.now(), type: "info", title: "desktop.stopped" });
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: "sandbox.desktop.stop",
-          params: { threadId: activeThreadId },
-          result: { ok: true },
-          status: "success",
-          source,
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Desktop stop failed";
-      setDesktop({ status: "error", error: message });
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: "sandbox.desktop.stop",
-          params: { threadId: activeThreadId },
-          result: { ok: false, error: { message } },
-          status: "error",
-          source,
-        });
-      }
-      throw error;
-    }
-  };
-
-  const runPython = async (
-    code: string,
-    timeoutSeconds?: number,
-    threadIdOverride?: string,
-    opts?: { source?: "chatkit" | "manual" | "system" }
-  ): Promise<PythonRunResult> => {
-    const activeThreadId = ensureThreadId(threadIdOverride);
-    setPythonCode(code);
-    setPython({ status: "running", error: undefined });
-
-    try {
-      const response = await postJson<{ ok: true; result: PythonRunResult }>(
-        "/api/sandbox/python/run",
-        {
-          threadId: activeThreadId,
-          code,
-          timeoutSeconds,
-        }
-      );
-
-      setPython({ status: "ready", lastResult: response.result, error: undefined });
-      addEvent({ ts: Date.now(), type: "info", title: "python.run" });
-      const status = response.result?.error ? "error" : "success";
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: "sandbox.python.run",
-          params: {
-            threadId: activeThreadId,
-            code,
-            timeoutSeconds,
-          },
-          result: response.result,
-          status,
-          source,
-        });
-      }
-      return response.result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Python run failed";
-      setPython({ status: "error", error: message });
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: "sandbox.python.run",
-          params: {
-            threadId: activeThreadId,
-            code,
-            timeoutSeconds,
-          },
-          result: { ok: false, error: { message } },
-          status: "error",
-          source,
-        });
-      }
-      throw error;
-    }
-  };
-
-  const runDesktopAction = async (
-    action: DesktopAction,
-    opts?: { threadId?: string; source?: "chatkit" | "manual" | "system" }
-  ): Promise<void> => {
-    const activeThreadId = ensureThreadId(opts?.threadId);
-    const payload = { threadId: activeThreadId, ...action };
-
-    try {
-      await postJson<{ ok: true; result: { ok: true } }>(
-        "/api/sandbox/desktop/action",
-        payload
-      );
       if (desktopTimeoutSeconds) {
         setDesktop({
           expiresAt: Date.now() + desktopTimeoutSeconds * 1000,
         });
       }
-      addEvent({
-        ts: Date.now(),
-        type: "info",
-        title: `desktop.${action.action}`,
-        detail: payload,
-      });
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: `sandbox.desktop.${action.action}`,
-          params: payload,
-          result: { ok: true },
-          status: "success",
-          source,
-        });
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Desktop action failed";
-      addEvent({
-        ts: Date.now(),
-        type: "error",
-        title: `desktop.${action.action}:error`,
-        detail: { message, payload },
-      });
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: `sandbox.desktop.${action.action}`,
-          params: payload,
-          result: { ok: false, error: { message } },
-          status: "error",
-          source,
-        });
-      }
-      throw error;
-    }
-  };
 
-  const takeDesktopScreenshot = async (opts?: {
-    threadId?: string;
-    includeCursor?: boolean;
-    includeScreenSize?: boolean;
-  }): Promise<DesktopScreenshotResult> => {
-    const activeThreadId = ensureThreadId(opts?.threadId);
-    const response = await postJson<{ ok: true; screenshot: DesktopScreenshotResult }>(
-      "/api/sandbox/desktop/screenshot",
-      {
-        threadId: activeThreadId,
-        includeCursor: opts?.includeCursor ?? true,
-        includeScreenSize: opts?.includeScreenSize ?? true,
-      }
-    );
+      return response.screenshot;
+    },
+    [addEvent, desktopTimeoutSeconds, ensureSandboxThreadId, setDesktop]
+  );
 
-    addEvent({
-      ts: Date.now(),
-      type: "info",
-      title: "desktop.screenshot",
-      detail: {
-        threadId: activeThreadId,
-        mime: response.screenshot.mime,
-        screenSize: response.screenshot.screenSize,
-        cursorPosition: response.screenshot.cursorPosition,
-        imageBytes: Math.floor((response.screenshot.imageBase64.length * 3) / 4),
-      },
-    });
-
-    if (desktopTimeoutSeconds) {
-      setDesktop({
-        expiresAt: Date.now() + desktopTimeoutSeconds * 1000,
-      });
-    }
-
-    return response.screenshot;
-  };
-
-  const getDesktopStatus = async (opts?: {
-    threadId?: string;
-  }): Promise<DesktopSandboxSession | null> => {
-    const activeThreadId = ensureThreadId(opts?.threadId);
-    const response = await getJson<{ ok: true; session: DesktopSandboxSession | null }>(
-      `/api/sandbox/desktop/status?threadId=${encodeURIComponent(activeThreadId)}`
-    );
-
-    setDesktop({
-      timeoutSeconds: response.session?.timeoutSeconds,
-      expiresAt: response.session?.expiresAt,
-    });
-
-    return response.session;
-  };
-
-  const setDesktopTimeout = async (
-    timeoutSeconds: number,
-    opts?: { threadId?: string; source?: "chatkit" | "manual" | "system" }
-  ): Promise<DesktopSandboxSession> => {
-    const activeThreadId = ensureThreadId(opts?.threadId);
-
-    try {
-      const response = await postJson<{ ok: true; session: DesktopSandboxSession }>(
-        "/api/sandbox/desktop/timeout",
-        { threadId: activeThreadId, timeoutSeconds }
-      );
+  const getDesktopStatus = useCallback(
+    async (opts?: { threadId?: string }): Promise<DesktopSandboxSession | null> => {
+      const activeThreadId = ensureSandboxThreadId(opts?.threadId);
+      const response = await getJson<{
+        ok: true;
+        session: DesktopSandboxSession | null;
+      }>(`/api/sandbox/desktop/status?threadId=${encodeURIComponent(activeThreadId)}`);
 
       setDesktop({
-        timeoutSeconds: response.session.timeoutSeconds,
-        expiresAt: response.session.expiresAt,
+        timeoutSeconds: response.session?.timeoutSeconds,
+        expiresAt: response.session?.expiresAt,
       });
-
-      addEvent({
-        ts: Date.now(),
-        type: "info",
-        title: "desktop.timeout",
-        detail: {
-          threadId: activeThreadId,
-          timeoutSeconds: response.session.timeoutSeconds ?? timeoutSeconds,
-        },
-      });
-
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: "sandbox.desktop.setTimeout",
-          params: { threadId: activeThreadId, timeoutSeconds },
-          result: {
-            ok: true,
-            timeoutSeconds: response.session.timeoutSeconds,
-            expiresAt: response.session.expiresAt,
-          },
-          status: "success",
-          source,
-        });
-      }
 
       return response.session;
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to update desktop timeout";
-      const source = opts?.source ?? "manual";
-      if (source !== "chatkit") {
-        void emitToolEvent({
-          tool: "sandbox.desktop.setTimeout",
-          params: { threadId: activeThreadId, timeoutSeconds },
-          result: { ok: false, error: { message } },
-          status: "error",
-          source,
-        });
-      }
-      throw error;
-    }
-  };
+    },
+    [ensureSandboxThreadId, setDesktop]
+  );
 
-  return {
-    startDesktop,
-    stopDesktop,
-    runPython,
-    runDesktopAction,
-    takeDesktopScreenshot,
-    getDesktopStatus,
-    setDesktopTimeout,
-  };
+  const setDesktopTimeout = useCallback(
+    async (
+      timeoutSeconds: number,
+      opts?: { threadId?: string; source?: "chatkit" | "manual" | "system" }
+    ): Promise<DesktopSandboxSession> => {
+      const activeThreadId = ensureSandboxThreadId(opts?.threadId);
+
+      try {
+        const response = await postJson<{ ok: true; session: DesktopSandboxSession }>(
+          "/api/sandbox/desktop/timeout",
+          { threadId: activeThreadId, timeoutSeconds }
+        );
+
+        setDesktop({
+          timeoutSeconds: response.session.timeoutSeconds,
+          expiresAt: response.session.expiresAt,
+        });
+
+        addEvent({
+          ts: Date.now(),
+          type: "info",
+          title: "desktop.timeout",
+          detail: {
+            threadId: activeThreadId,
+            timeoutSeconds: response.session.timeoutSeconds ?? timeoutSeconds,
+          },
+        });
+
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: "sandbox.desktop.setTimeout",
+            params: { threadId: activeThreadId, timeoutSeconds },
+            result: {
+              ok: true,
+              timeoutSeconds: response.session.timeoutSeconds,
+              expiresAt: response.session.expiresAt,
+            },
+            status: "success",
+            source,
+          });
+        }
+
+        return response.session;
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to update desktop timeout";
+        const source = opts?.source ?? "manual";
+        if (source !== "chatkit") {
+          void emitToolEvent({
+            tool: "sandbox.desktop.setTimeout",
+            params: { threadId: activeThreadId, timeoutSeconds },
+            result: { ok: false, error: { message } },
+            status: "error",
+            source,
+          });
+        }
+        throw error;
+      }
+    },
+    [addEvent, emitToolEvent, ensureSandboxThreadId, setDesktop]
+  );
+
+  return useMemo(
+    () => ({
+      startDesktop,
+      stopDesktop,
+      runPython,
+      runDesktopAction,
+      takeDesktopScreenshot,
+      getDesktopStatus,
+      setDesktopTimeout,
+    }),
+    [
+      getDesktopStatus,
+      runDesktopAction,
+      runPython,
+      setDesktopTimeout,
+      startDesktop,
+      stopDesktop,
+      takeDesktopScreenshot,
+    ]
+  );
 }
