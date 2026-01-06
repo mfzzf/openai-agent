@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { ChatKit, useChatKit } from "@openai/chatkit-react";
 import { useChatKitSession } from "@/hooks/useChatKitSession";
 import { useSandboxActions } from "@/hooks/useSandboxActions";
@@ -8,6 +8,7 @@ import { useWorkspaceStore, type ToolEvent } from "@/hooks/useWorkspaceStore";
 
 export function ChatKitPanel(): JSX.Element {
   const { getClientSecret } = useChatKitSession();
+  const threadId = useWorkspaceStore((state) => state.threadId);
   const setThreadId = useWorkspaceStore((state) => state.setThreadId);
   const setActiveTab = useWorkspaceStore((state) => state.setActiveTab);
   const setDesktop = useWorkspaceStore((state) => state.setDesktop);
@@ -97,7 +98,8 @@ export function ChatKitPanel(): JSX.Element {
     }
   };
 
-  const { control, sendCustomAction } = useChatKit({
+  const { control, sendCustomAction, setThreadId: setChatKitThreadId } =
+    useChatKit({
     api: chatkitApiUrl
       ? {
           url: chatkitApiUrl,
@@ -118,7 +120,10 @@ export function ChatKitPanel(): JSX.Element {
       },
     },
     onThreadChange(event) {
-      setThreadId(event.threadId ?? null);
+      if (!event.threadId) {
+        return;
+      }
+      setThreadId(event.threadId);
       addEvent({
         ts: Date.now(),
         type: "info",
@@ -419,6 +424,37 @@ export function ChatKitPanel(): JSX.Element {
       }
     },
   });
+
+  const didSeedThreadRef = useRef(false);
+  useEffect(() => {
+    if (threadId || didSeedThreadRef.current) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const currentThreadId = useWorkspaceStore.getState().threadId;
+      if (currentThreadId || didSeedThreadRef.current) {
+        return;
+      }
+
+      const generated =
+        typeof crypto?.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `thread-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      didSeedThreadRef.current = true;
+      setThreadId(generated);
+      setChatKitThreadId(generated);
+      addEvent({
+        ts: Date.now(),
+        type: "info",
+        title: "thread.seeded",
+        detail: { threadId: generated },
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [addEvent, setChatKitThreadId, setThreadId, threadId]);
 
   useEffect(() => {
     if (!chatkitApiUrl) {
