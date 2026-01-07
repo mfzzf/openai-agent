@@ -59,6 +59,7 @@ export function PythonPanel(props: {
             <option value="python">python</option>
             <option value="go">go</option>
             <option value="js">js</option>
+            <option value="rust">rust</option>
           </select>
         </label>
         <label style={{ fontSize: 13, color: "var(--muted)" }}>

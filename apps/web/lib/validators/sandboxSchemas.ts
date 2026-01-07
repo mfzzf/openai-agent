@@ -87,7 +87,7 @@ export const pythonCreateSchema = z.object({
 export const pythonRunSchema = z.object({
   threadId: z.string().min(1),
   code: z.string().min(1),
-  language: z.enum(["python", "go", "js"]).optional(),
+  language: z.enum(["python", "go", "js", "rust"]).optional(),
   timeoutSeconds: z.preprocess(
     (value) => (value === null ? undefined : value),
     z.number().int().positive().optional()

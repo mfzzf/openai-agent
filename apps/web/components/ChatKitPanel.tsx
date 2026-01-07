@@ -205,7 +205,12 @@ export function ChatKitPanel(): JSX.Element {
           }
           case "sandbox.code.run": {
             const code = toolCall.params?.code as string | undefined;
-            const language = toolCall.params?.language as "python" | "go" | "js" | undefined;
+            const language = toolCall.params?.language as
+              | "python"
+              | "go"
+              | "js"
+              | "rust"
+              | undefined;
             const timeoutSeconds = toolCall.params?.timeoutSeconds as
               | number
               | undefined;

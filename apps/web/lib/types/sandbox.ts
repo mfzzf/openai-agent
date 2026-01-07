@@ -15,7 +15,7 @@ export type PythonSandboxSession = {
   lastActiveAt: number;
 };
 
-export type CodeLanguage = "python" | "go" | "js";
+export type CodeLanguage = "python" | "go" | "js" | "rust";
 
 export type PythonRunRequest = {
   threadId: string;

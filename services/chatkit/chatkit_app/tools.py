@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from agents import function_tool
 from agents.tool_context import ToolContext
@@ -65,7 +65,7 @@ def sandbox_python_run(
     code: str,
     threadId: Optional[str] = None,
     timeoutSeconds: Optional[int] = None,
-    language: Optional[str] = None,
+    language: Optional[Literal["python", "go", "js", "rust"]] = None,
 ) -> dict[str, Any]:
     thread_id = threadId or ctx.context.thread.id
     payload: dict[str, Any] = {
